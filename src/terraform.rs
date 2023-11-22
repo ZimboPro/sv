@@ -46,13 +46,11 @@ pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<String>> {
     let lambda = terraform.join("lambda.tf");
     let lambda_permissions = terraform.join("lambda_permissions.tf");
     let api_gw = terraform.join("api_gateway.tf");
-    let mut lambda_metadata: Vec<Lambda> = Vec::new();
-    let mut keys = Vec::new();
-    if lambda.exists() {
-        lambda_metadata = validate_lambda(lambda)?;
+    let lambda_metadata = if lambda.exists() {
+        validate_lambda(lambda)?
     } else {
         return Err(anyhow!("File lambda.tf doesn't exist in {:?}", terraform));
-    }
+    };
     if lambda_permissions.exists() {
         validate_lambda_permissions(lambda_permissions, &lambda_metadata)?;
     } else {
@@ -61,14 +59,14 @@ pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<String>> {
             terraform
         ));
     }
-    if api_gw.exists() {
-        keys = extract_api_gw(api_gw, lambda_metadata)?;
+    let keys = if api_gw.exists() {
+        extract_api_gw(api_gw, lambda_metadata)?
     } else {
         return Err(anyhow!(
             "File api_gateway.tf doesn't exist in {:?}",
             terraform
         ));
-    }
+    };
     Ok(keys)
 }
 
