@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 authors = ["Leslie de Jager"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/ZimboPro/sv"
 
 [dependencies]
 home = "0.5.3"
@@ -21,3 +22,21 @@ merge-yaml-hash = "0.2.0"
 yaml-rust = "0.4.5"
 temp-file = "0.1.7"
 paris = { version = "1.5", features = ["macros"] }
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'cargo dist'
+[workspace.metadata.dist]
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.4.3"
+# CI backends to support
+ci = ["github"]
+# The installers to generate for each app
+installers = []
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc"]
+# Publish jobs to run in CI
+pr-run-mode = "plan"
