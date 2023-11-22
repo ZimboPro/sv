@@ -115,13 +115,11 @@ fn merge(files: Vec<String>) -> String {
 
 fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for entry in path.read_dir().expect("Failed to read directory") {
-        if let Ok(entry) = entry {
-            if entry.path().is_dir() {
-                files.append(&mut find_files(&entry.path(), extension));
-            } else if entry.path().extension() == Some(extension) {
-                files.push(entry.path());
-            }
+    for entry in path.read_dir().expect("Failed to read directory").flatten() {
+        if entry.path().is_dir() {
+            files.append(&mut find_files(&entry.path(), extension));
+        } else if entry.path().extension() == Some(extension) {
+            files.push(entry.path());
         }
     }
     files
