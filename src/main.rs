@@ -15,14 +15,15 @@ use terraform::validate_terraform;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// The path to the openapi files
+    /// The path to the OpenAPI files
     #[arg(short, long)]
     api_path: PathBuf,
+    /// The path to the Terraform files
     #[arg(short, long)]
     terraform: PathBuf,
-    // /// Number of times to greet
-    // #[arg(short, long, default_value_t = 1)]
-    // count: u8,
+    /// Used to output the arguments to a Markdown file
+    #[arg(long, hide = true)]
+    markdown: bool,
 }
 
 fn validating_path(path: &PathBuf) -> anyhow::Result<()> {
@@ -40,6 +41,10 @@ fn main() -> anyhow::Result<()> {
     //     .format_timestamp(None)
     //     .build();
     let args = Args::parse();
+    if args.markdown {
+        clap_markdown::print_help_markdown::<Args>();
+        return Ok(());
+    }
     let api_path = args.api_path;
     validating_path(&api_path)?;
     validating_path(&args.terraform)?;
