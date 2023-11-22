@@ -1,19 +1,12 @@
 mod open_api;
 mod terraform;
 
-use anyhow::anyhow;
 use clap::Parser;
-use merge_yaml_hash::MergeYamlHash;
-use oapi::{OApi, OApiDocument};
+
 use open_api::validate_open_api;
 use paris::{error, info};
-use sppparse::SparseRoot;
-use std::io::{self, Write};
-use std::{
-    ffi::OsStr,
-    io::Read,
-    path::{Path, PathBuf},
-};
+
+use std::path::PathBuf;
 // extern crate pretty_env_logger;
 // #[macro_use]
 // extern crate log;
@@ -48,8 +41,8 @@ fn main() -> anyhow::Result<()> {
     //     .build();
     let args = Args::parse();
     let api_path = args.api_path;
-    let _ = validating_path(&api_path)?;
-    let _ = validating_path(&args.terraform)?;
+    validating_path(&api_path)?;
+    validating_path(&args.terraform)?;
     let merged_yaml_content = validate_open_api(api_path)?;
     let keys = validate_terraform(args.terraform)?;
     for key in keys {

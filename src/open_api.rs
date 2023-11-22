@@ -1,15 +1,11 @@
 use anyhow::anyhow;
-use clap::Parser;
+
 use merge_yaml_hash::MergeYamlHash;
-use oapi::{OApi, OApiDocument};
+use oapi::OApi;
 use paris::{error, info};
 use sppparse::SparseRoot;
-use std::io::{self, Write};
-use std::{
-    ffi::OsStr,
-    io::Read,
-    path::{Path, PathBuf},
-};
+
+use std::{ffi::OsStr, io::Read, path::PathBuf};
 
 pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
     info!("Validating OpenAPI documents");

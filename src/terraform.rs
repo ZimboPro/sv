@@ -1,4 +1,4 @@
-use std::{collections::btree_map::Keys, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::anyhow;
 use anyhow::Ok;
@@ -80,12 +80,12 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
     let body = hcl::parse(&lambda_contents)?;
     let locals = body
         .blocks()
-        .find(|x| x.identifier.to_string() == "locals".to_string())
+        .find(|x| x.identifier.to_string() == *"locals")
         .unwrap();
     let lambdas = locals
         .body
         .attributes()
-        .find(|x| x.key.to_string() == "lambdas".to_string())
+        .find(|x| x.key.to_string() == *"lambdas")
         .unwrap();
     match &lambdas.expr {
         hcl::Expression::Object(s) => {
@@ -106,7 +106,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
                                     if data_key.to_string().to_lowercase()
                                         == "handler".to_lowercase()
                                     {
-                                        return Some(data_item.1.to_string().replace("\"", ""));
+                                        return Some(data_item.1.to_string().replace('\"', ""));
                                     }
                                     None
                                 }
@@ -171,12 +171,12 @@ fn validate_lambda_permissions(
     let body = hcl::parse(&lambda_contents)?;
     let locals = body
         .blocks()
-        .find(|x| x.identifier.to_string() == "locals".to_string())
+        .find(|x| x.identifier.to_string() == *"locals")
         .unwrap();
     let lambdas = locals
         .body
         .attributes()
-        .find(|x| x.key.to_string() == "lambdas_permissions".to_string())
+        .find(|x| x.key.to_string() == *"lambdas_permissions")
         .unwrap();
     match &lambdas.expr {
         hcl::Expression::Object(s) => {
@@ -196,7 +196,7 @@ fn validate_lambda_permissions(
                 }
             }
             for key in p_keys {
-                if keys.iter().find(|x| x.key == key).is_none() {
+                if !keys.iter().any(|x| x.key == key) {
                     valid = false;
                     error!("'lambda_permissions' has extra key '{}'", key);
                 }
@@ -230,10 +230,10 @@ fn extract_api_gw(api_gw: PathBuf, lambda: Vec<Lambda>) -> anyhow::Result<Vec<St
     for line in lines {
         for name in &names {
             if line.contains(name)
-                && !line.trim().starts_with("#")
+                && !line.trim().starts_with('#')
                 && !line.trim().starts_with("//")
             {
-                let parts: Vec<&str> = line.split(":").collect();
+                let parts: Vec<&str> = line.split(':').collect();
                 template_names.push(ArnLambda {
                     key: parts[0].trim().to_string(),
                     lambda_key: name.clone(),
