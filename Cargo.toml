@@ -1,0 +1,23 @@
+[package]
+name = "sv"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Leslie de Jager"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+home = "0.5.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"
+hcl-rs = "0.16.6"
+oapi = "0.1.2"
+sppparse = "0.1.4"
+anyhow = "1.0.75"
+clap = { version = "4.4.7", features = ["derive"] }
+# python-parser = "0.2.0"
+# tera = "1.19.1"
+merge-yaml-hash = "0.2.0"
+yaml-rust = "0.4.5"
+temp-file = "0.1.7"
+paris = { version = "1.5", features = ["macros"] }
