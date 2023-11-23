@@ -3,7 +3,7 @@ use sv::{self, cross_validation::cross_validation, open_api, terraform};
 use clap::Parser;
 
 use open_api::validate_open_api;
-use openapiv3::{self, Operation};
+
 use paris::warn;
 
 use std::path::PathBuf;

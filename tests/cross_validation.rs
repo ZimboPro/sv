@@ -11,7 +11,7 @@ pub fn read_valid_open_api() -> String {
 }
 
 pub fn deserialize_open_api(contents: &str) -> OpenAPI {
-  serde_yaml::from_str(&contents).unwrap()
+  serde_yaml::from_str(contents).unwrap()
 }
 
 pub fn get_operation(path_data: &ReferenceOr<PathItem>, method: HttpMethod) -> Operation {
@@ -64,10 +64,12 @@ fn test_invalid_aws_integration_extension_arn() {
     method: HttpMethod::Get,
     route: "/v1/valid/path".to_string(),
   };
-  assert_eq!(
-    validate_aws_api_gateway_integration(&d, "random key", "lambda_invalid_1_arn", &api),
-    false
-  );
+  assert!(!validate_aws_api_gateway_integration(
+    &d,
+    "random key",
+    "lambda_invalid_1_arn",
+    &api
+  ));
 }
 
 #[test]
@@ -77,10 +79,12 @@ fn test_invalid_aws_integration_extension_arn_no_uri() {
     method: HttpMethod::Get,
     route: "/v1/valid/path".to_string(),
   };
-  assert_eq!(
-    validate_aws_api_gateway_integration(&d, "random key", "lambda_invalid_1_arn", &api),
-    false
-  );
+  assert!(!validate_aws_api_gateway_integration(
+    &d,
+    "random key",
+    "lambda_invalid_1_arn",
+    &api
+  ));
 }
 
 #[test]
@@ -90,8 +94,10 @@ fn test_invalid_no_aws_integration_extension() {
     method: HttpMethod::Get,
     route: "/v1/valid/path".to_string(),
   };
-  assert_eq!(
-    validate_aws_api_gateway_integration(&d, "random key", "lambda_invalid_1_arn", &api),
-    false
-  );
+  assert!(!validate_aws_api_gateway_integration(
+    &d,
+    "random key",
+    "lambda_invalid_1_arn",
+    &api
+  ));
 }

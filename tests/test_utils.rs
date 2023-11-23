@@ -6,7 +6,7 @@ pub fn read_valid_open_api() -> String {
 }
 
 pub fn deserialize_open_api(contents: &str) -> OpenAPI {
-  serde_yaml::from_str(&contents).unwrap()
+  serde_yaml::from_str(contents).unwrap()
 }
 
 pub fn get_operation(path_data: &ReferenceOr<PathItem>, method: HttpMethod) -> Operation {
