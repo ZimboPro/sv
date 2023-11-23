@@ -1,3 +1,5 @@
+use std::ffi::OsStr;
+use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::anyhow;
@@ -5,12 +7,27 @@ use anyhow::Ok;
 
 use paris::error;
 use paris::info;
-use paris::warn;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Lambda {
-    key: String,
-    handler: String,
+use crate::util::HttpMethod;
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Lambda {
+    /// Terraform lambda key
+    pub key: String,
+    /// The lambda handler
+    pub handler: String,
+    /// Is a step function
+    pub step_function: bool,
+    /// List of APIs and HTTP methods
+    pub apis: Vec<APIPath>,
+    /// ARN template key
+    pub arn_template_key: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
+pub struct APIPath {
+    pub method: HttpMethod,
+    pub route: String,
 }
 
 // fn extract_value(bytes: &str) -> IResult<&str, String> {
@@ -42,24 +59,26 @@ struct Lambda {
 //     Ok(())
 // }
 
-pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<String>> {
+pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<Lambda>> {
+    validate_terraform_files(&terraform)?;
     let lambda = terraform.join("lambda.tf");
     let lambda_permissions = terraform.join("lambda_permissions.tf");
     let api_gw = terraform.join("api_gateway.tf");
-    let lambda_metadata = if lambda.exists() {
+    let step_fn = terraform.join("step_function.tf");
+    let mut lambda_metadata = if lambda.exists() {
         validate_lambda(lambda)?
     } else {
         return Err(anyhow!("File lambda.tf doesn't exist in {:?}", terraform));
     };
     if lambda_permissions.exists() {
-        validate_lambda_permissions(lambda_permissions, &lambda_metadata)?;
+        validate_lambda_permissions(lambda_permissions, &mut lambda_metadata)?;
     } else {
         return Err(anyhow!(
             "File lambda_permissions.tf doesn't exist in {:?}",
             terraform
         ));
     }
-    let keys = if api_gw.exists() {
+    let mut lambda_data = if api_gw.exists() {
         extract_api_gw(api_gw, lambda_metadata)?
     } else {
         return Err(anyhow!(
@@ -67,11 +86,76 @@ pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<String>> {
             terraform
         ));
     };
-    Ok(keys)
+    if step_fn.exists() {
+        lambda_data = extract_step_function(lambda_data, step_fn)?;
+        let mut valid = true;
+        for lambda_item in &lambda_data {
+            if lambda_item.arn_template_key.is_none() && !lambda_item.apis.is_empty() {
+                valid = false;
+                error!(
+                    "The lambda {} is not used in API gateway but is used in lambda_permissions.tf",
+                    lambda_item.key
+                )
+            }
+            if lambda_item.arn_template_key.is_some() && lambda_item.apis.is_empty() {
+                error!(
+                    "The lambda arn {} exits in API gateway but not in lambda_permissions.tf",
+                    lambda_item.key
+                )
+            }
+            if !lambda_item.step_function
+                && lambda_item.arn_template_key.is_none()
+                && lambda_item.apis.is_empty()
+            {
+                error!(
+                    "The lambda arn {} exits in lambda.tf but used anywhere else",
+                    lambda_item.key
+                )
+            }
+        }
+        if !valid {
+            return Err(anyhow!("Invalid Terraform configuration"));
+        }
+        Ok(lambda_data)
+    } else {
+        let mut valid = true;
+        for lambda_item in &lambda_data {
+            if lambda_item.arn_template_key.is_none() && !lambda_item.apis.is_empty() {
+                valid = false;
+                error!("The lambda {} is not use in API gateway", lambda_item.key)
+            }
+        }
+        if !valid {
+            return Err(anyhow!("Invalid Terraform configuration"));
+        }
+        Ok(lambda_data)
+    }
+}
+
+fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in path.read_dir().expect("Failed to read directory").flatten() {
+        if entry.path().is_dir() && !entry.path().ends_with(".terraform") {
+            files.append(&mut find_files(&entry.path(), extension));
+        } else if entry.path().extension() == Some(extension) {
+            files.push(entry.path());
+        }
+    }
+    files
+}
+
+fn validate_terraform_files(path: &Path) -> anyhow::Result<()> {
+    info!("Validating Terraform files");
+    let files = find_files(path, OsStr::new("tf"));
+    for file in files {
+        let lambda_contents = std::fs::read_to_string(file)?;
+        let _ = hcl::parse(&lambda_contents)?;
+    }
+    Ok(())
 }
 
 fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
-    info!("Validating lambda.tf");
+    info!("Validating lambda.tf config");
     let mut lambda_metadata: Vec<Lambda> = Vec::new();
     let mut valid = true;
     let lambda_contents = std::fs::read_to_string(lambda)?;
@@ -115,6 +199,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
                         lambda_metadata.push(Lambda {
                             key: lambda_key,
                             handler,
+                            ..Default::default()
                         })
                     }
                     _ => todo!(),
@@ -138,7 +223,6 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
                 valid = false;
                 error!("Key is duplicated: {}", meta.key);
             }
-            // if lambda_contents.matches(meta.key).count() > 1 {}
             while j < lambda_metadata.len() {
                 let t = lambda_metadata.get(j).unwrap();
                 if meta.handler == t.handler {
@@ -161,9 +245,9 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
 
 fn validate_lambda_permissions(
     lambda_permissions: PathBuf,
-    keys: &Vec<Lambda>,
+    keys: &mut [Lambda],
 ) -> anyhow::Result<()> {
-    info!("Validating lambda_permissions.tf");
+    info!("Validating lambda_permissions.tf config");
     let mut valid = true;
     let lambda_contents = std::fs::read_to_string(lambda_permissions)?;
     let body = hcl::parse(&lambda_contents)?;
@@ -187,10 +271,36 @@ fn validate_lambda_permissions(
                 };
                 p_keys.push(lambda_key);
             }
-            for key in keys {
-                if !p_keys.contains(&key.key) {
-                    valid = false;
-                    error!("'lambda_permissions' doesn't have {}", key.key);
+            for item in s {
+                match item.1 {
+                    hcl::Expression::Array(arr) => {
+                        for arr_item in arr {
+                            match arr_item {
+                                hcl::Expression::Object(route_obj) => {
+                                    for route in route_obj {
+                                        if route.0.to_string() == *"source_arn" {
+                                            let s = keys
+                                                .iter_mut()
+                                                .find(|x| x.key == item.0.to_string())
+                                                .unwrap();
+                                            let section = route.1.to_string().replace('\"', "");
+                                            let parts: Vec<&str> = section.split('*').collect();
+                                            let section = parts[1].replacen('/', " ", 2);
+                                            let data: Vec<&str> =
+                                                section.trim().split(' ').collect();
+
+                                            s.apis.push(APIPath {
+                                                method: data[0].trim().into(),
+                                                route: format!("/{}", data[1].trim()),
+                                            });
+                                        }
+                                    }
+                                }
+                                _ => todo!(),
+                            }
+                        }
+                    }
+                    _ => todo!(),
                 }
             }
             for key in p_keys {
@@ -198,7 +308,10 @@ fn validate_lambda_permissions(
                     valid = false;
                     error!("'lambda_permissions' has extra key '{}'", key);
                 }
-                if lambda_contents.matches(&key).count() > 1 {
+                let len = lambda_contents.matches(&key).count();
+                if lambda_contents.matches(&key).count() > 1
+                    && keys.iter_mut().find(|x| x.key == key).unwrap().apis.len() != len
+                {
                     valid = false;
                     error!("Key is duplicated: {}", key);
                 }
@@ -212,49 +325,52 @@ fn validate_lambda_permissions(
     Ok(())
 }
 
-struct ArnLambda {
-    key: String,
-    lambda_key: String,
-}
-
-fn extract_api_gw(api_gw: PathBuf, lambda: Vec<Lambda>) -> anyhow::Result<Vec<String>> {
+fn extract_api_gw(api_gw: PathBuf, mut lambda: Vec<Lambda>) -> anyhow::Result<Vec<Lambda>> {
+    info!("Validating api_gateway.tf config");
     let contents = std::fs::read_to_string(api_gw)?;
     {
         let _ = hcl::parse(&contents)?;
     }
     let lines = contents.lines();
-    let mut template_names = Vec::new();
-    let names: Vec<String> = lambda.iter().map(|x| x.key.clone()).collect();
+    let mut valid = true;
     for line in lines {
-        for name in &names {
-            if line.contains(name)
+        for name in &mut lambda {
+            if line.contains(&name.key)
                 && !line.trim().starts_with('#')
                 && !line.trim().starts_with("//")
             {
                 let parts: Vec<&str> = line.split(':').collect();
-                template_names.push(ArnLambda {
-                    key: parts[0].trim().to_string(),
-                    lambda_key: name.clone(),
-                });
+                if name.arn_template_key.is_some() {
+                    valid = false;
+                    error!("The lambda key '{}' is used more than once", name.key);
+                }
+                name.arn_template_key = Some(parts[0].trim().to_string());
                 break;
             }
-        }
-    }
-    let mut valid = true;
-    for name in names {
-        let len = template_names
-            .iter()
-            .filter(|x| x.lambda_key == name)
-            .count();
-        if len > 1 {
-            valid = false;
-            error!("The lambda key '{}' is used more than once", name);
-        } else if len == 0 {
-            warn!("WARNING: The lambda key is not used at all: {}", name);
         }
     }
     if !valid {
         return Err(anyhow!("Invalid api_gateway.tf"));
     }
-    Ok(template_names.into_iter().map(|x| x.key).collect())
+    Ok(lambda)
+}
+
+fn extract_step_function(
+    mut lambda_data: Vec<Lambda>,
+    step_fn: PathBuf,
+) -> anyhow::Result<Vec<Lambda>> {
+    info!("Validating step_function.tf config");
+    let contents = std::fs::read_to_string(step_fn)?;
+    {
+        let _ = hcl::parse(&contents)?;
+    }
+    let lines = contents.lines();
+    for line in lines {
+        for lambda in &mut lambda_data {
+            if line.contains(&format!("module.lambda[\"{}", lambda.key)) {
+                lambda.step_function = true;
+            }
+        }
+    }
+    Ok(lambda_data)
 }
