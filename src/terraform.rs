@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use anyhow::anyhow;
@@ -43,9 +44,11 @@ struct Lambda {
 // }
 
 pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<String>> {
+    let _ = validate_terraform_files(&terraform)?;
     let lambda = terraform.join("lambda.tf");
     let lambda_permissions = terraform.join("lambda_permissions.tf");
     let api_gw = terraform.join("api_gateway.tf");
+    let step_fn = terraform.join("step_function.tf");
     let lambda_metadata = if lambda.exists() {
         validate_lambda(lambda)?
     } else {
@@ -70,8 +73,30 @@ pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<String>> {
     Ok(keys)
 }
 
+fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in path.read_dir().expect("Failed to read directory").flatten() {
+        if entry.path().is_dir() && !entry.path().ends_with(".terraform") {
+            files.append(&mut find_files(&entry.path(), extension));
+        } else if entry.path().extension() == Some(extension) {
+            files.push(entry.path());
+        }
+    }
+    files
+}
+
+fn validate_terraform_files(path: &std::path::PathBuf) -> anyhow::Result<()> {
+    info!("Validating Terraform files");
+    let files = find_files(path, OsStr::new("tf"));
+    for file in files {
+        let lambda_contents = std::fs::read_to_string(file)?;
+        let _ = hcl::parse(&lambda_contents)?;
+    }
+    Ok(())
+}
+
 fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
-    info!("Validating lambda.tf");
+    info!("Validating lambda.tf config");
     let mut lambda_metadata: Vec<Lambda> = Vec::new();
     let mut valid = true;
     let lambda_contents = std::fs::read_to_string(lambda)?;
@@ -163,7 +188,7 @@ fn validate_lambda_permissions(
     lambda_permissions: PathBuf,
     keys: &Vec<Lambda>,
 ) -> anyhow::Result<()> {
-    info!("Validating lambda_permissions.tf");
+    info!("Validating lambda_permissions.tf config");
     let mut valid = true;
     let lambda_contents = std::fs::read_to_string(lambda_permissions)?;
     let body = hcl::parse(&lambda_contents)?;
@@ -218,6 +243,7 @@ struct ArnLambda {
 }
 
 fn extract_api_gw(api_gw: PathBuf, lambda: Vec<Lambda>) -> anyhow::Result<Vec<String>> {
+    info!("Validating api_gateway.tf config");
     let contents = std::fs::read_to_string(api_gw)?;
     {
         let _ = hcl::parse(&contents)?;
