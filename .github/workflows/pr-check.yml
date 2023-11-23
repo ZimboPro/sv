@@ -5,6 +5,10 @@ permissions:
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - edited
 
 jobs:
   # Run 'cargo dist plan' to determine what tasks we need to do
