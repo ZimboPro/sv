@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
                     Some(path_item) => match api.method {
                         HttpMethod::Get => {
                             if let Some(config) = &path_item.as_item().unwrap().get {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             }
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Post => {
                             if let Some(config) = &path_item.as_item().unwrap().post {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -87,7 +87,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Put => {
                             if let Some(config) = &path_item.as_item().unwrap().put {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Delete => {
                             if let Some(config) = &path_item.as_item().unwrap().delete {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Patch => {
                             if let Some(config) = &path_item.as_item().unwrap().patch {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -123,7 +123,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Options => {
                             if let Some(config) = &path_item.as_item().unwrap().options {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Head => {
                             if let Some(config) = &path_item.as_item().unwrap().head {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -161,7 +161,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
-    let lambda_apis: Vec<APIPath> = keys.iter().map(|x| x.apis.clone()).flatten().collect();
+    let lambda_apis: Vec<APIPath> = keys.iter().flat_map(|x| x.apis.clone()).collect();
     doc.paths.iter().for_each(|path| {
         let temp = lambda_apis.clone();
         let mut filtered_lambdas = Vec::new();
@@ -170,7 +170,7 @@ fn main() -> anyhow::Result<()> {
                 filtered_lambdas.push(api.method.to_string().to_lowercase());
             }
         }
-        if filtered_lambdas.len() == 0 {
+        if filtered_lambdas.is_empty() {
             valid = false;
             error!("The path {} is not defined in Terraform", path.0);
         } else {
