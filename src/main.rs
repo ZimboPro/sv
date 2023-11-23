@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
                     Some(path_item) => match api.method {
                         HttpMethod::Get => {
                             if let Some(config) = &path_item.as_item().unwrap().get {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             }
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Post => {
                             if let Some(config) = &path_item.as_item().unwrap().post {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -87,7 +87,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Put => {
                             if let Some(config) = &path_item.as_item().unwrap().put {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Delete => {
                             if let Some(config) = &path_item.as_item().unwrap().delete {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Patch => {
                             if let Some(config) = &path_item.as_item().unwrap().patch {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -123,7 +123,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Options => {
                             if let Some(config) = &path_item.as_item().unwrap().options {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         HttpMethod::Head => {
                             if let Some(config) = &path_item.as_item().unwrap().head {
-                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, &api) {
+                                if !validate_aws_api_gateway_integration(config, &key.key, &arn_key, api) {
                                     valid = false;
                                 }
                             } else {
@@ -170,7 +170,7 @@ fn main() -> anyhow::Result<()> {
     if !valid {
         return Err(anyhow::anyhow!("Invalid Terraform and OpenAPI documents"));
     }
-    println!("");
+    println!();
     warn!("Make sure to check the JSON policy in either api_gateway.tf or the resources for the attached policy.");
     Ok(())
 }
@@ -187,7 +187,7 @@ fn validate_aws_api_gateway_integration(
             match aws.get("uri") {
                 Some(uri) => {
                     let uri_path = uri.as_str().unwrap();
-                    if !uri_path.contains(&arn_key) {
+                    if !uri_path.contains(arn_key) {
                         valid = false;
                         error!("The 'uri' doesn't contain the ARN placeholder '{}' in the 'x-amazon-apigateway-integration' extension for {} {} for the lambda {}", arn_key, api.method, api.route, lambda_key);
                     }

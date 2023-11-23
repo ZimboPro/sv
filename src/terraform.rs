@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::anyhow;
@@ -59,7 +60,7 @@ pub struct APIPath {
 // }
 
 pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<Lambda>> {
-    let _ = validate_terraform_files(&terraform)?;
+    validate_terraform_files(&terraform)?;
     let lambda = terraform.join("lambda.tf");
     let lambda_permissions = terraform.join("lambda_permissions.tf");
     let api_gw = terraform.join("api_gateway.tf");
@@ -143,7 +144,7 @@ fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
     files
 }
 
-fn validate_terraform_files(path: &std::path::PathBuf) -> anyhow::Result<()> {
+fn validate_terraform_files(path: &Path) -> anyhow::Result<()> {
     info!("Validating Terraform files");
     let files = find_files(path, OsStr::new("tf"));
     for file in files {
@@ -244,7 +245,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
 
 fn validate_lambda_permissions(
     lambda_permissions: PathBuf,
-    keys: &mut Vec<Lambda>,
+    keys: &mut [Lambda],
 ) -> anyhow::Result<()> {
     info!("Validating lambda_permissions.tf config");
     let mut valid = true;
@@ -277,16 +278,16 @@ fn validate_lambda_permissions(
                             match arr_item {
                                 hcl::Expression::Object(route_obj) => {
                                     for route in route_obj {
-                                        if route.0.to_string() == "source_arn".to_string() {
+                                        if route.0.to_string() == *"source_arn" {
                                             let s = keys
                                                 .iter_mut()
                                                 .find(|x| x.key == item.0.to_string())
                                                 .unwrap();
-                                            let section = route.1.to_string().replace("\"", "");
-                                            let parts: Vec<&str> = section.split("*").collect();
-                                            let section = parts[1].replacen("/", " ", 2);
+                                            let section = route.1.to_string().replace('\"', "");
+                                            let parts: Vec<&str> = section.split('*').collect();
+                                            let section = parts[1].replacen('/', " ", 2);
                                             let data: Vec<&str> =
-                                                section.trim().split(" ").collect();
+                                                section.trim().split(' ').collect();
 
                                             s.apis.push(APIPath {
                                                 method: data[0].trim().into(),

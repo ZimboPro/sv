@@ -1,5 +1,7 @@
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default)]
 pub enum HttpMethod {
+    #[default]
     Get,
     Post,
     Put,
@@ -11,11 +13,7 @@ pub enum HttpMethod {
     Connect,
 }
 
-impl Default for HttpMethod {
-    fn default() -> Self {
-        HttpMethod::Get
-    }
-}
+
 
 impl From<String> for HttpMethod {
     fn from(s: String) -> Self {
