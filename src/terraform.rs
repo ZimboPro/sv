@@ -24,7 +24,7 @@ pub struct Lambda {
     pub arn_template_key: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
 pub struct APIPath {
     pub method: HttpMethod,
     pub route: String,

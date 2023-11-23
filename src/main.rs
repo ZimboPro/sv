@@ -57,8 +57,8 @@ fn main() -> anyhow::Result<()> {
     // TODO rather check for path and attached arn key
     let mut valid = true;
     let doc: openapiv3::OpenAPI = serde_yaml::from_str(&merged_yaml_content)?;
-    for key in keys {
-        if let Some(arn_key) = key.arn_template_key {
+    for key in &keys {
+        if let Some(arn_key) = &key.arn_template_key {
             key.apis
                 .iter()
                 .for_each(|api| {
@@ -151,7 +151,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
         });
-            let len = merged_yaml_content.matches(&arn_key).count();
+            let len = merged_yaml_content.matches(arn_key).count();
             if len == 0 {
                 valid = false;
                 error!(
@@ -161,6 +161,38 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
+    let lambda_apis: Vec<APIPath> = keys.iter().map(|x| x.apis.clone()).flatten().collect();
+    doc.paths.iter().for_each(|path| {
+        let temp = lambda_apis.clone();
+        let mut filtered_lambdas = Vec::new();
+        for api in temp {
+            if &api.route == path.0 {
+                filtered_lambdas.push(api.method.to_string().to_lowercase());
+            }
+        }
+        if filtered_lambdas.len() == 0 {
+            valid = false;
+            error!("The path {} is not defined in Terraform", path.0);
+        } else {
+            let mut methods = Vec::new();
+            for method in path.1.as_item().unwrap().iter() {
+                methods.push(method.0);
+            }
+            let mut filtered = Vec::new();
+            for method in &methods {
+                if !filtered_lambdas.contains(&method.to_string()) {
+                    filtered.push(method);
+                }
+            }
+            if !filtered.is_empty() {
+                valid = false;
+                error!(
+                    "The path {} is not defined in Terraform for the following methods: {:?}",
+                    path.0, filtered
+                );
+            }
+        }
+    });
     if !valid {
         return Err(anyhow::anyhow!("Invalid Terraform and OpenAPI documents"));
     }

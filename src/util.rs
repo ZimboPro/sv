@@ -1,5 +1,4 @@
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[derive(Default)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
 pub enum HttpMethod {
     #[default]
     Get,
@@ -12,8 +11,6 @@ pub enum HttpMethod {
     Trace,
     Connect,
 }
-
-
 
 impl From<String> for HttpMethod {
     fn from(s: String) -> Self {
