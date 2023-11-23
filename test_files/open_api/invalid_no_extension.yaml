@@ -1,0 +1,13 @@
+openapi: 3.0.1
+info:
+  version: 1.0.0
+  title: Invalid OpenAPI
+tags:
+  - name: tag1
+    description: desc1 
+paths:
+  /v1/valid/path:
+    get:
+      responses:
+        "200":
+          description: Success
