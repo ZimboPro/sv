@@ -152,13 +152,7 @@ fn main() -> anyhow::Result<()> {
                 }
         });
             let len = merged_yaml_content.matches(&arn_key).count();
-            if len > 1 {
-                valid = false;
-                error!(
-                    "The Lambda ARN placeholder '{}' is used {} times in in the OpenAPI docs",
-                    arn_key, len
-                );
-            } else if len == 0 {
+            if len == 0 {
                 valid = false;
                 error!(
                     "The Lambda ARN placeholder '{}' is not used in the OpenAPI docs",
