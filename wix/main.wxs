@@ -34,7 +34,7 @@
                       where "<CARGO_TARGET>" is replaced with the "CargoTarget"
                       variable value and "<CARGO_PROFILE>" is replaced with the
                       value from the "CargoProfile" variable. This can also
-                      be overridden manually with the "target-bin-dir" flag.
+                      be overriden manually with tne "target-bin-dir" flag.
   CargoTargetDir    = The path to the directory for the build artifacts, i.e.
                       "target".
   CargoProfile      = The cargo profile used to build the binaries
@@ -61,7 +61,7 @@
     <Product
         Id='*'
         Name='sv'
-        UpgradeCode='43B8AF5F-C7CF-4B4F-9A73-56C9DB40B46B'
+        UpgradeCode='FB7A2531-E23B-43D9-B341-12545822B743'
         Manufacturer='Leslie de Jager'
         Language='1033'
         Codepage='1252'
@@ -96,13 +96,14 @@
                     -->
                     <Component Id='License' Guid='*'>
                         <File Id='LicenseFile'
+                            Name='License'
                             DiskId='1'
-                            Source='wix\License.rtf'
+                            Source='License.rtf'
                             KeyPath='yes'/>
                     </Component>
                     
                     <Directory Id='Bin' Name='bin'>
-                        <Component Id='Path' Guid='D6D5B913-A714-4DDA-9976-06F3D1625655' KeyPath='yes'>
+                        <Component Id='Path' Guid='2B3352CD-4EC5-46CC-BB9D-1AF7A66845D0' KeyPath='yes'>
                             <Environment
                                 Id='PATH'
                                 Name='PATH'
@@ -164,18 +165,8 @@
         <!--<Icon Id='ProductICO' SourceFile='wix\Product.ico'/>-->
         <!--<Property Id='ARPPRODUCTICON' Value='ProductICO' />-->
 
+        <Property Id='ARPHELPLINK' Value='https://github.com/ZimboPro/sv'/>
         
-        <!--
-          Adding a URL to Add/Remove Programs control panel listing for the
-          application is a two step process:
-
-          1. Uncomment the following `Property` tag with the "ARPHELPLINK" Id
-             attribute value.
-          2. Change the value for `Value` attribute of the following
-             `Property` tag to a valid URL.
-        -->
-        <!--<Property Id='ARPHELPLINK' Value='ChangeMe'/>-->
-
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
             <!--
@@ -194,7 +185,7 @@
           Disabling the EULA dialog in the installer requires commenting out
           or removing the following `WixVariable` tag
         -->
-        <WixVariable Id='WixUILicenseRtf' Value='wix\License.rtf'/>
+        <WixVariable Id='WixUILicenseRtf' Value='License.rtf'/>
         
         
         <!--
