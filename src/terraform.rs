@@ -243,7 +243,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
 
 fn validate_lambda_permissions(
   lambda_permissions: PathBuf,
-  keys: &mut [Lambda],
+  lambda_metadata: &mut [Lambda],
 ) -> anyhow::Result<()> {
   info!("Validating lambda_permissions.tf config");
   let mut valid = true;
@@ -252,34 +252,34 @@ fn validate_lambda_permissions(
   let locals = body
     .blocks()
     .find(|x| x.identifier.to_string() == *"locals")
-    .unwrap();
+    .expect("Variable locals not defined in lambda_permissions.tf");
   let lambdas = locals
     .body
     .attributes()
     .find(|x| x.key.to_string() == *"lambdas_permissions")
-    .unwrap();
+    .expect("Variable lambdas_permissions doesn't exist in locals");
   match &lambdas.expr {
-    hcl::Expression::Object(s) => {
-      let mut p_keys = Vec::new();
-      for key in s.keys() {
-        let lambda_key = match key {
+    hcl::Expression::Object(permissions) => {
+      let mut lambda_permission_keys = Vec::new();
+      for permission_group in permissions.keys() {
+        let lambda_key = match permission_group {
           hcl::ObjectKey::Identifier(s) => s.to_string(),
           hcl::ObjectKey::Expression(_) => todo!(),
           _ => todo!(),
         };
-        p_keys.push(lambda_key);
+        lambda_permission_keys.push(lambda_key);
       }
-      for item in s {
-        match item.1 {
+      for permission_group in permissions {
+        match permission_group.1 {
           hcl::Expression::Array(arr) => {
             for arr_item in arr {
               match arr_item {
                 hcl::Expression::Object(route_obj) => {
                   for route in route_obj {
                     if route.0.to_string() == *"source_arn" {
-                      let s = keys
+                      let s = lambda_metadata
                         .iter_mut()
-                        .find(|x| x.key == item.0.to_string())
+                        .find(|x| x.key == permission_group.0.to_string())
                         .unwrap();
                       let section = route.1.to_string().replace('\"', "");
                       let parts: Vec<&str> = section.split('*').collect();
@@ -300,14 +300,20 @@ fn validate_lambda_permissions(
           _ => todo!(),
         }
       }
-      for key in p_keys {
-        if !keys.iter().any(|x| x.key == key) {
+      for key in lambda_permission_keys {
+        if !lambda_metadata.iter().any(|x| x.key == key) {
           valid = false;
           error!("'lambda_permissions' has extra key '{}'", key);
         }
         let len = lambda_contents.matches(&key).count();
         if lambda_contents.matches(&key).count() > 1
-          && keys.iter_mut().find(|x| x.key == key).unwrap().apis.len() != len
+          && lambda_metadata
+            .iter_mut()
+            .find(|x| x.key == key)
+            .unwrap()
+            .apis
+            .len()
+            != len
         {
           valid = false;
           error!("Key is duplicated: {}", key);
