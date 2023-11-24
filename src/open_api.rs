@@ -16,7 +16,7 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
   let mut valid = true;
   for file in &files {
     match SparseRoot::new_from_file(PathBuf::from_iter([
-      std::env::current_dir().unwrap(),
+      std::env::current_dir().expect("Failed to get current directory"),
       file.to_path_buf(),
     ])) {
       Ok(open_api_doc) => {
@@ -25,11 +25,11 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
           valid = false;
           error!(
             "API document {:?} is not valid: {}",
-            file.file_name().unwrap(),
+            file.file_name().expect("Failed to get file name"),
             e
           );
         } else {
-          let root = doc.root_get().unwrap();
+          let root = doc.root_get().expect("Failed to get OpenAPI root");
           if let Some(file_tags) = root.tags() {
             tags.append(&mut file_tags.clone());
           }
@@ -39,7 +39,7 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
         valid = false;
         error!(
           "API document {:?} was not able to be parsed: {}",
-          file.file_name().unwrap(),
+          file.file_name().expect("Failed to get file name"),
           e
         );
       }
@@ -53,10 +53,10 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
   if tags.len() > 1 {
     let mut index = 0;
     while index < tags.len() - 1 {
-      let tag = tags.get(index).unwrap();
+      let tag = tags.get(index).expect("Failed to get tag");
       let mut j = index + 1;
       while j < tags.len() {
-        let t = tags.get(j).unwrap();
+        let t = tags.get(j).expect("Failed to get tag");
         if tag.name() == t.name() && tag.description() == t.description() {
           valid = false;
           error!(
@@ -90,7 +90,9 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
     doc.check().expect("not to have logic errors");
     Ok(merged_content)
   } else {
-    Ok(open_file(files.get(0).unwrap().to_path_buf()))
+    Ok(open_file(
+      files.get(0).expect("Failed to get file path").to_path_buf(),
+    ))
   }
 }
 

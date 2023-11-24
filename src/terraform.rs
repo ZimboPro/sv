@@ -163,16 +163,16 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   let locals = body
     .blocks()
     .find(|x| x.identifier.to_string() == *"locals")
-    .unwrap();
+    .expect("Expected locals to be set");
   let lambdas = locals
     .body
     .attributes()
     .find(|x| x.key.to_string() == *"lambdas")
-    .unwrap();
+    .expect("Expected 'lambdas' variable to be set");
   match &lambdas.expr {
     hcl::Expression::Object(s) => {
       for key in s.keys() {
-        let l = s.get_key_value(key).unwrap();
+        let l = s.get_key_value(key).expect("Failed to get key");
 
         let lambda_key = match l.0 {
           hcl::ObjectKey::Identifier(s) => s.to_string(),
@@ -193,7 +193,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
                 hcl::ObjectKey::Expression(_) => None,
                 _ => None,
               })
-              .unwrap();
+              .expect("Failed to get handler");
             lambda_metadata.push(Lambda {
               key: lambda_key,
               handler,
@@ -210,19 +210,27 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   }
   if !lambda_metadata.is_empty() {
     let mut index = 0;
-    let start = lambda_contents.find("lambdas").unwrap();
+    let start = lambda_contents
+      .find("lambdas")
+      .expect("Could not find 'lambdas' in file");
     let (_, end_str) = lambda_contents.split_at(start);
-    let end = lambda_contents.find("\n}").unwrap();
+    let end = lambda_contents
+      .find("\n}")
+      .expect("Could not find closing '}', expecting it to be '\\n}'");
     let (locals, _) = end_str.split_at(end);
     while index < lambda_metadata.len() - 1 {
       let mut j = index + 1;
-      let meta = lambda_metadata.get(index).unwrap();
+      let meta = lambda_metadata
+        .get(index)
+        .expect("Failed to get lambda details");
       if locals.matches(&meta.key).count() > 1 {
         valid = false;
         error!("Key is duplicated: {}", meta.key);
       }
       while j < lambda_metadata.len() {
-        let t = lambda_metadata.get(j).unwrap();
+        let t = lambda_metadata
+          .get(j)
+          .expect("Failed to get lambda details");
         if meta.handler == t.handler {
           valid = false;
           error!(
@@ -280,7 +288,7 @@ fn validate_lambda_permissions(
                       let s = lambda_metadata
                         .iter_mut()
                         .find(|x| x.key == permission_group.0.to_string())
-                        .unwrap();
+                        .expect("Failed to match permission to key to lambda");
                       let section = route.1.to_string().replace('\"', "");
                       let parts: Vec<&str> = section.split('*').collect();
                       let section = parts[1].replacen('/', " ", 2);
@@ -310,7 +318,7 @@ fn validate_lambda_permissions(
           && lambda_metadata
             .iter_mut()
             .find(|x| x.key == key)
-            .unwrap()
+            .expect("Failed to match lambda key")
             .apis
             .len()
             != len

@@ -20,7 +20,7 @@ pub fn cross_validation(
         .for_each(|api| match doc.paths.paths.get(&api.route) {
           Some(path_item) => match api.method {
             HttpMethod::Get => {
-              if let Some(config) = &path_item.as_item().unwrap().get {
+              if let Some(config) = &path_item.as_item().expect("failed to get path data").get {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -33,7 +33,7 @@ pub fn cross_validation(
               }
             }
             HttpMethod::Post => {
-              if let Some(config) = &path_item.as_item().unwrap().post {
+              if let Some(config) = &path_item.as_item().expect("failed to get path data").post {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -46,7 +46,7 @@ pub fn cross_validation(
               }
             }
             HttpMethod::Put => {
-              if let Some(config) = &path_item.as_item().unwrap().put {
+              if let Some(config) = &path_item.as_item().expect("failed to get path data").put {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -59,7 +59,7 @@ pub fn cross_validation(
               }
             }
             HttpMethod::Delete => {
-              if let Some(config) = &path_item.as_item().unwrap().delete {
+              if let Some(config) = &path_item.as_item().expect("failed to get path data").delete {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -72,7 +72,7 @@ pub fn cross_validation(
               }
             }
             HttpMethod::Patch => {
-              if let Some(config) = &path_item.as_item().unwrap().patch {
+              if let Some(config) = &path_item.as_item().expect("failed to get path data").patch {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -85,7 +85,11 @@ pub fn cross_validation(
               }
             }
             HttpMethod::Options => {
-              if let Some(config) = &path_item.as_item().unwrap().options {
+              if let Some(config) = &path_item
+                .as_item()
+                .expect("failed to get path data")
+                .options
+              {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -98,7 +102,7 @@ pub fn cross_validation(
               }
             }
             HttpMethod::Head => {
-              if let Some(config) = &path_item.as_item().unwrap().head {
+              if let Some(config) = &path_item.as_item().expect("failed to get path data").head {
                 if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
                   valid = false;
                 }
@@ -143,7 +147,7 @@ pub fn cross_validation(
       error!("The path {} is not defined in Terraform", path.0);
     } else {
       let mut methods = Vec::new();
-      for method in path.1.as_item().unwrap().iter() {
+      for method in path.1.as_item().expect("Failed to get method data").iter() {
         methods.push(method.0);
       }
       let mut filtered = Vec::new();
@@ -177,7 +181,7 @@ pub fn validate_aws_api_gateway_integration(
   match config.extensions.get("x-amazon-apigateway-integration") {
     Some(aws) => match aws.get("uri") {
       Some(uri) => {
-        let uri_path = uri.as_str().unwrap();
+        let uri_path = uri.as_str().expect("Failed to convert URI to string");
         if !uri_path.contains(arn_key) {
           valid = false;
           error!("The 'uri' doesn't contain the ARN placeholder '{}' in the 'x-amazon-apigateway-integration' extension for {} {} for the lambda {}", arn_key, api.method, api.route, lambda_key);
