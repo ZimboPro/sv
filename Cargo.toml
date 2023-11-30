@@ -16,7 +16,7 @@ home = "0.5.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 hcl-rs = "0.16.6"
-oapi = "0.1.2"
+oapi = { git = "https://github.com/ZimboPro/oapi.git" }
 sppparse = "0.1.4"
 anyhow = "1.0.75"
 clap = { version = "4.4.7", features = ["derive"] }
@@ -44,10 +44,10 @@ ci = ["github"]
 installers = ["shell", "msi"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
-    "x86_64-unknown-linux-gnu",
-    "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
-    "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
 ]
 # Publish jobs to run in CI
 pr-run-mode = "plan"
