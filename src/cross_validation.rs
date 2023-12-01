@@ -114,7 +114,7 @@ pub fn cross_validation(
                 );
               }
             }
-            _ => todo!(),
+            _ => todo!("Unsupported HTTP method"),
           },
           None => {
             error!(
@@ -135,33 +135,48 @@ pub fn cross_validation(
   }
   let lambda_apis: Vec<APIPath> = lambda_data.iter().flat_map(|x| x.apis.clone()).collect();
   doc.paths.iter().for_each(|path| {
-    let temp = lambda_apis.clone();
-    let mut filtered_lambdas = Vec::new();
-    for api in temp {
-      if &api.route == path.0 {
-        filtered_lambdas.push(api.method.to_string().to_lowercase());
-      }
-    }
-    if filtered_lambdas.is_empty() {
-      valid = false;
-      error!("The path {} is not defined in Terraform", path.0);
+    let uri = path
+      .1
+      .as_item()
+      .unwrap()
+      .extensions
+      .get("x-amazon-apigateway-integration")
+      .expect("Expected 'x-amazon-apigateway-integration' extension")
+      .get("uri")
+      .expect("Expected 'uri' in 'x-amazon-apigateway-integration' extension")
+      .as_str()
+      .expect("Failed to convert URI to string");
+    if uri.contains("states:action") {
+      // TODO: Add support for step functions
     } else {
-      let mut methods = Vec::new();
-      for method in path.1.as_item().expect("Failed to get method data").iter() {
-        methods.push(method.0);
-      }
-      let mut filtered = Vec::new();
-      for method in &methods {
-        if !filtered_lambdas.contains(&method.to_string()) {
-          filtered.push(method);
+      let temp = lambda_apis.clone();
+      let mut filtered_lambdas = Vec::new();
+      for api in temp {
+        if &api.route == path.0 {
+          filtered_lambdas.push(api.method.to_string().to_lowercase());
         }
       }
-      if !filtered.is_empty() {
+      if filtered_lambdas.is_empty() {
         valid = false;
-        error!(
-          "The path {} is not defined in Terraform for the following methods: {:?}",
-          path.0, filtered
-        );
+        error!("The path {} is not defined in Terraform", path.0);
+      } else {
+        let mut methods = Vec::new();
+        for method in path.1.as_item().expect("Failed to get method data").iter() {
+          methods.push(method.0);
+        }
+        let mut filtered = Vec::new();
+        for method in &methods {
+          if !filtered_lambdas.contains(&method.to_string()) {
+            filtered.push(method);
+          }
+        }
+        if !filtered.is_empty() {
+          valid = false;
+          error!(
+            "The path {} is not defined in Terraform for the following methods: {:?}",
+            path.0, filtered
+          );
+        }
       }
     }
   });

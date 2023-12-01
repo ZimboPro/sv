@@ -22,6 +22,16 @@ pub struct Lambda {
   pub apis: Vec<APIPath>,
   /// ARN template key
   pub arn_template_key: Option<String>,
+  /// Lambda type
+  pub lambda_type: LambdaType,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum LambdaType {
+  StepFunction,
+  #[default]
+  ApiGateway,
+  EventBridge,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
@@ -176,8 +186,8 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
 
         let lambda_key = match l.0 {
           hcl::ObjectKey::Identifier(s) => s.to_string(),
-          hcl::ObjectKey::Expression(_) => todo!(),
-          _ => todo!(),
+          hcl::ObjectKey::Expression(_) => todo!("Unsupported lambda key"),
+          _ => todo!("Should not get here"),
         };
         match &l.1 {
           hcl::Expression::Object(data) => {
@@ -200,7 +210,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
               ..Default::default()
             })
           }
-          _ => todo!(),
+          _ => todo!("Unsupported lambda expression, expecting object"),
         }
       }
     }
@@ -272,8 +282,8 @@ fn validate_lambda_permissions(
       for permission_group in permissions.keys() {
         let lambda_key = match permission_group {
           hcl::ObjectKey::Identifier(s) => s.to_string(),
-          hcl::ObjectKey::Expression(_) => todo!(),
-          _ => todo!(),
+          hcl::ObjectKey::Expression(_) => todo!("Unsupported lambda key"),
+          _ => todo!("Should not get here"),
         };
         lambda_permission_keys.push(lambda_key);
       }
@@ -283,29 +293,52 @@ fn validate_lambda_permissions(
             for arr_item in arr {
               match arr_item {
                 hcl::Expression::Object(route_obj) => {
-                  for route in route_obj {
-                    if route.0.to_string() == *"source_arn" {
-                      let s = lambda_metadata
-                        .iter_mut()
-                        .find(|x| x.key == permission_group.0.to_string())
-                        .expect("Failed to match permission to key to lambda");
-                      let section = route.1.to_string().replace('\"', "");
-                      let parts: Vec<&str> = section.split('*').collect();
-                      let section = parts[1].replacen('/', " ", 2);
-                      let data: Vec<&str> = section.trim().split(' ').collect();
+                  let s = lambda_metadata
+                    .iter_mut()
+                    .find(|x| x.key == permission_group.0.to_string())
+                    .expect(
+                      format!(
+                        "Failed to match permission to key in lambda: {}",
+                        permission_group.0.to_string()
+                      )
+                      .as_str(),
+                    );
 
-                      s.apis.push(APIPath {
-                        method: data[0].trim().into(),
-                        route: format!("/{}", data[1].trim()),
-                      });
+                  let principal = route_obj
+                    .iter()
+                    .find(|r| r.0.to_string() == *"principal")
+                    .unwrap();
+
+                  let service = principal.1.to_string().replace('\"', "");
+                  match service.as_str() {
+                    "apigateway.amazonaws.com" => {
+                      s.lambda_type = LambdaType::ApiGateway;
                     }
+                    "events.amazonaws.com" => {
+                      s.lambda_type = LambdaType::EventBridge;
+                    }
+                    _ => todo!("Need to cater for {} service", service),
+                  }
+
+                  if s.lambda_type == LambdaType::ApiGateway {
+                    let source_arn = route_obj
+                      .iter()
+                      .find(|r| r.0.to_string() == *"source_arn")
+                      .unwrap();
+
+                    let data = handle_api_gateway_lambda(source_arn.1.to_string());
+
+                    s.apis.push(APIPath {
+                      method: data[0].trim().into(),
+                      route: data[1].trim().into(),
+                    });
                   }
                 }
-                _ => todo!(),
+                _ => todo!("Terraform expression not supported currently, expecting object"),
               }
             }
           }
-          _ => todo!(),
+          _ => todo!("Terraform expression not supported currently, expecting array"),
         }
       }
       for key in lambda_permission_keys {
@@ -328,7 +361,7 @@ fn validate_lambda_permissions(
         }
       }
     }
-    _ => todo!(),
+    _ => todo!("Terraform expression not supported currently for lambdas_permissions variable"),
   }
   if !valid {
     return Err(anyhow!("Invalid lambda_permissions.tf file"));
@@ -382,4 +415,196 @@ fn extract_step_function(
     }
   }
   Ok(lambda_data)
+}
+
+fn extract_api_and_method(line: &str, method: HttpMethod) -> Option<(String, String)> {
+  if line.contains(method.to_string().to_uppercase().as_str()) {
+    Some((
+      method.to_string(),
+      line.replace(
+        format!("/{}", method.to_string().to_uppercase()).as_str(),
+        "",
+      ),
+    ))
+  } else {
+    None
+  }
+}
+
+fn handle_api_gateway_lambda(source_arn: String) -> Vec<String> {
+  let section = source_arn.replace('\"', "");
+  let parts: Vec<String> = section.split('}').map(|x| x.to_string()).collect();
+  if section.contains('*') {
+    let parts: Vec<String> = section.split('*').map(|x| x.to_string()).collect();
+    let section = parts[1].replacen('/', " ", 2);
+    let mut data: Vec<String> = section.trim().split(' ').map(|x| x.to_string()).collect();
+    data[1] = format!("/{}", data[1].trim());
+    data
+  } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Get) {
+    [data.0, data.1].to_vec()
+  } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Post) {
+    [data.0, data.1].into()
+  } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Put) {
+    [data.0, data.1].into()
+  } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Delete) {
+    [data.0, data.1].into()
+  } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Patch) {
+    [data.0, data.1].into()
+  } else {
+    todo!("Need to cater for {}", parts[1].trim());
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::path::PathBuf;
+
+  // #[test]
+  // fn test_validate_terraform() {
+  //   let terraform = PathBuf::from("tests/terraform");
+  //   let lambda_data = validate_terraform(terraform).unwrap();
+  //   assert_eq!(lambda_data.len(), 2);
+  //   assert_eq!(lambda_data[0].key, "lambda1");
+  //   assert_eq!(lambda_data[0].handler, "lambda1.handler");
+  //   assert_eq!(lambda_data[0].arn_template_key, Some("lambda1_arn".into()));
+  //   assert_eq!(lambda_data[0].apis.len(), 1);
+  //   assert_eq!(lambda_data[0].apis[0].method, HttpMethod::Get);
+  //   assert_eq!(lambda_data[0].apis[0].route, "/lambda1");
+  //   assert_eq!(lambda_data[0].step_function, false);
+  //   assert_eq!(lambda_data[0].lambda_type, LambdaType::ApiGateway);
+  //   assert_eq!(lambda_data[1].key, "lambda2");
+  //   assert_eq!(lambda_data[1].handler, "lambda2.handler");
+  //   assert_eq!(lambda_data[1].arn_template_key, Some("lambda2_arn".into()));
+  //   assert_eq!(lambda_data[1].apis.len(), 1);
+  //   assert_eq!(lambda_data[1].apis[0].method, HttpMethod::Get);
+  //   assert_eq!(lambda_data[1].apis[0].route, "/lambda2");
+  //   assert_eq!(lambda_data[1].step_function, true);
+  //   assert_eq!(lambda_data[1].lambda_type, LambdaType::ApiGateway);
+  // }
+
+  // #[test]
+  // fn test_validate_terraform_files() {
+  //   let terraform = PathBuf::from("tests/terraform");
+  //   let result = validate_terraform_files(&terraform);
+  //   assert!(result.is_ok());
+  // }
+
+  // #[test]
+  // fn test_validate_terraform_files_invalid() {
+  //   let terraform = PathBuf::from("tests/terraform_invalid");
+  //   let result = validate_terraform_files(&terraform);
+  //   assert!(result.is_err());
+  // }
+
+  // #[test]
+  // fn test_validate_lambda() {
+  //   let lambda = PathBuf::from("tests/terraform/lambda.tf");
+  //   let result = validate_lambda(lambda);
+  //   assert!(result.is_ok());
+  //   let lambda = result.unwrap();
+  //   assert_eq!(lambda.len(), 2);
+  //   assert_eq!(lambda[0].key, "lambda1");
+  //   assert_eq!(lambda[0].handler, "lambda1.handler");
+  //   assert_eq!(lambda[1].key, "lambda2");
+  //   assert_eq!(lambda[1].handler, "lambda2.handler");
+  // }
+
+  // Tests for handle_api_gateway_lambda
+  #[test]
+  fn test_handle_api_gateway_lambda() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/GET/health\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "GET");
+    assert_eq!(data[1], "/api/health");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_with_wildcard() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "POST");
+    assert_eq!(data[1], "/postcode-validation");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_with_wildcard_and_path() {
+    let source_arn =
+      "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "POST");
+    assert_eq!(data[1], "/postcode-validation/validate");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_with_wildcard_and_path_and_query() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate?postcode={postcode}\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "POST");
+    assert_eq!(data[1], "/postcode-validation/validate?postcode={postcode}");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_with_wildcard_and_path_and_query_and_hash() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate?postcode={postcode}#test\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "POST");
+    assert_eq!(
+      data[1],
+      "/postcode-validation/validate?postcode={postcode}#test"
+    );
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_with_wildcard_and_path_and_query_and_hash_and_slash() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate?postcode={postcode}#test/\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "POST");
+    assert_eq!(
+      data[1],
+      "/postcode-validation/validate?postcode={postcode}#test/"
+    );
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_post() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/POST/health\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "POST");
+    assert_eq!(data[1], "/api/health");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_put() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/PUT/health\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "PUT");
+    assert_eq!(data[1], "/api/health");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_delete() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/DELETE/health\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "DELETE");
+    assert_eq!(data[1], "/api/health");
+  }
+
+  #[test]
+  fn test_handle_api_gateway_lambda_patch() {
+    let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/PATCH/health\"";
+    let data = handle_api_gateway_lambda(source_arn.to_string());
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0], "PATCH");
+    assert_eq!(data[1], "/api/health");
+  }
 }
