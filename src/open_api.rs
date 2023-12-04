@@ -7,6 +7,22 @@ use sppparse::SparseRoot;
 
 use std::{ffi::OsStr, io::Read, path::PathBuf};
 
+use crate::util::HttpMethod;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OpenAPIData {
+  path: String,
+  method: HttpMethod,
+  uri: String,
+  execution_type: APIType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum APIType {
+  ARN,
+  StepFunction,
+}
+
 pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
   info!("Validating OpenAPI documents");
 
@@ -125,4 +141,62 @@ fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
     }
   }
   files
+}
+
+fn extract_api_data_for_item(
+  item: &openapiv3::Operation,
+  path: &str,
+  method: HttpMethod,
+) -> anyhow::Result<OpenAPIData> {
+  let aws = item
+    .extensions
+    .get("x-amazon-apigateway-integration")
+    .expect("Expected 'x-amazon-apigateway-integration' extension");
+  let uri = aws
+    .get("uri")
+    .expect("Expected 'uri' in 'x-amazon-apigateway-integration' extension");
+  let uri_path = uri.as_str().expect("Failed to convert URI to string");
+  if uri_path.contains("states:action") {
+    Ok(OpenAPIData {
+      path: path.to_string(),
+      method,
+      uri: uri_path.to_string(),
+      execution_type: APIType::StepFunction,
+    })
+  } else {
+    Ok(OpenAPIData {
+      path: path.to_string(),
+      method,
+      uri: uri_path.to_string(),
+      execution_type: APIType::ARN,
+    })
+  }
+}
+
+fn extract_api_data(content: String) -> anyhow::Result<Vec<OpenAPIData>> {
+  let mut data = Vec::new();
+  let doc: openapiv3::OpenAPI = serde_yaml::from_str(&content)?;
+  let paths = doc.paths;
+  for (path, path_item) in paths.paths {
+    if let Some(get) = &path_item.as_item().unwrap().get {
+      data.push(extract_api_data_for_item(&get, &path, HttpMethod::Get)?);
+    }
+    if let Some(post) = &path_item.as_item().unwrap().post {
+      data.push(extract_api_data_for_item(&post, &path, HttpMethod::Post)?);
+    }
+    if let Some(put) = &path_item.as_item().unwrap().put {
+      data.push(extract_api_data_for_item(&put, &path, HttpMethod::Put)?);
+    }
+    if let Some(patch) = &path_item.as_item().unwrap().patch {
+      data.push(extract_api_data_for_item(&patch, &path, HttpMethod::Patch)?);
+    }
+    if let Some(delete) = &path_item.as_item().unwrap().delete {
+      data.push(extract_api_data_for_item(
+        &delete,
+        &path,
+        HttpMethod::Delete,
+      )?);
+    }
+  }
+  Ok(data)
 }
