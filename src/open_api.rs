@@ -200,3 +200,96 @@ fn extract_api_data(content: String) -> anyhow::Result<Vec<OpenAPIData>> {
   }
   Ok(data)
 }
+
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_extract_api_data() {
+    let content = r#"
+openapi: 3.0.0
+info:
+  title: Test
+  version: 1.0.0
+paths:
+  /test:
+    get:
+      responses:
+        '200':
+          description: OK
+      x-amazon-apigateway-integration:
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations
+        httpMethod: POST
+        type: aws_proxy
+    post:
+      responses:
+        '200':
+          description: OK
+      x-amazon-apigateway-integration:
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations
+        httpMethod: POST
+        type: aws_proxy
+    put:
+      responses:
+        '200':
+          description: OK
+      x-amazon-apigateway-integration:
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations
+        httpMethod: POST
+        type: aws_proxy
+    patch:
+      responses:
+        '200':
+          description: OK
+      x-amazon-apigateway-integration:
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations
+        httpMethod: POST
+        type: aws_proxy
+    delete:
+      responses:
+        '200':
+          description: OK
+      x-amazon-apigateway-integration:
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations
+        httpMethod: POST
+        type: aws_proxy
+"#;
+    let data = extract_api_data(content.to_string()).expect("Failed to extract API data");
+    assert_eq!(data.len(), 5);
+    assert_eq!(data[0].path, "/test");
+    assert_eq!(data[0].method, HttpMethod::Get);
+    assert_eq!(
+      data[0].uri,
+      "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
+    );
+    assert_eq!(data[0].execution_type, APIType::ARN);
+    assert_eq!(data[1].path, "/test");
+    assert_eq!(data[1].method, HttpMethod::Post);
+    assert_eq!(
+      data[1].uri,
+      "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
+    );
+    assert_eq!(data[1].execution_type, APIType::ARN);
+    assert_eq!(data[2].path, "/test");
+    assert_eq!(data[2].method, HttpMethod::Put);
+    assert_eq!(
+      data[2].uri,
+      "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
+    );
+    assert_eq!(data[2].execution_type, APIType::ARN);
+    assert_eq!(data[3].path, "/test");
+    assert_eq!(data[3].method, HttpMethod::Patch);
+    assert_eq!(
+      data[3].uri,
+      "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
+    );
+    assert_eq!(data[3].execution_type, APIType::ARN);
+    assert_eq!(data[4].path, "/test");
+    assert_eq!(data[4].method, HttpMethod::Delete);
+    assert_eq!(
+      data[4].uri,
+      "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
+    );
+    assert_eq!(data[4].execution_type, APIType::ARN);
+  }
+}
