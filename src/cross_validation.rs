@@ -79,14 +79,12 @@ fn validate_lambda_against_open_api(
       );
     } else {
       filtered.for_each(|x| {
-        if x.execution_type == APIType::Lambda {
-          if !x.uri.contains(arn_key) {
-            valid = false;
-            error!(
-              "The 'uri' doesn't contain the ARN placeholder '{}' in the 'x-amazon-apigateway-integration' extension for {} {} for the lambda {}",
-              arn_key, api.method, api.route, lambda_key
-            );
-          }
+        if x.execution_type == APIType::Lambda && !x.uri.contains(arn_key) {
+          valid = false;
+          error!(
+            "The 'uri' doesn't contain the ARN placeholder '{}' in the 'x-amazon-apigateway-integration' extension for {} {} for the lambda {}",
+            arn_key, api.method, api.route, lambda_key
+          );
         }
       });
     }

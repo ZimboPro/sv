@@ -299,13 +299,12 @@ fn validate_lambda_permissions(
                   let s = lambda_metadata
                     .iter_mut()
                     .find(|x| x.key == permission_group.0.to_string())
-                    .expect(
-                      format!(
+                    .unwrap_or_else(|| {
+                      panic!(
                         "Failed to match permission to key in lambda: {}",
-                        permission_group.0.to_string()
+                        permission_group.0
                       )
-                      .as_str(),
-                    );
+                    });
 
                   let principal = route_obj
                     .iter()
