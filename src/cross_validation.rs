@@ -56,7 +56,7 @@ pub fn cross_validation(
 }
 
 fn validate_lambda_against_open_api(
-  open_api_data: &Vec<OpenAPIData>,
+  open_api_data: &[OpenAPIData],
   arn_key: &str,
   lambda_key: &str,
   api: &APIPath,
