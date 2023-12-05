@@ -25,9 +25,9 @@ clap = { version = "4.4.7", features = ["derive"] }
 merge-yaml-hash = "0.2.0"
 yaml-rust = "0.4.5"
 temp-file = "0.1.7"
-paris = { version = "1.5", features = ["macros"] }
 clap-markdown = "0.1.3"
 openapiv3 = "1.0.3"
+simplelog = { version = "0.12.1", features = ["paris"] }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]

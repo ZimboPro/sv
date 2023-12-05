@@ -1,10 +1,11 @@
+use simplelog::{
+  warn, Color, ColorChoice, ConfigBuilder, Level, LevelFilter, TermLogger, TerminalMode,
+};
 use sv::{self, cross_validation::cross_validation, open_api, terraform};
 
 use clap::Parser;
 
 use open_api::validate_open_api;
-
-use paris::warn;
 
 use std::path::PathBuf;
 // extern crate pretty_env_logger;
@@ -21,6 +22,9 @@ struct Args {
   /// The path to the Terraform files
   #[arg(short, long)]
   terraform: PathBuf,
+  /// Verbose mode
+  #[arg(short, long)]
+  verbose: bool,
   /// Used to output the arguments to a Markdown file
   #[arg(long, hide = true)]
   markdown: bool,
@@ -40,18 +44,35 @@ fn main() -> anyhow::Result<()> {
   //     .filter_level(log::LevelFilter::Info)
   //     .format_timestamp(None)
   //     .build();
+
   let args = Args::parse();
   if args.markdown {
     clap_markdown::print_help_markdown::<Args>();
     return Ok(());
   }
+  let level = if args.verbose {
+    LevelFilter::Debug
+  } else {
+    LevelFilter::Info
+  };
+  let config = ConfigBuilder::new()
+    .set_level_color(Level::Debug, Some(Color::Cyan))
+    .set_level_color(Level::Info, Some(Color::Blue))
+    .set_level_color(Level::Warn, Some(Color::Yellow))
+    .set_level_color(Level::Error, Some(Color::Magenta))
+    .set_level_color(Level::Trace, Some(Color::Green))
+    .set_time_level(LevelFilter::Off)
+    .build();
+
+  TermLogger::init(level, config, TerminalMode::Stdout, ColorChoice::Auto).unwrap();
   let api_path = args.api_path;
   validating_path(&api_path)?;
   validating_path(&args.terraform)?;
-  let merged_yaml_content = validate_open_api(api_path)?;
+  let open_api_config = validate_open_api(api_path)?;
   let lambda_data = validate_terraform(args.terraform)?;
-  cross_validation(lambda_data, merged_yaml_content)?;
+  cross_validation(lambda_data, open_api_config)?;
   println!();
   warn!("Make sure to check the JSON policy in either api_gateway.tf or the resources for the attached policy.");
+  warn!("NOTE: This tool only checks for common errors. It does not check for all errors.");
   Ok(())
 }

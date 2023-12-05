@@ -2,28 +2,41 @@ use anyhow::anyhow;
 
 use merge_yaml_hash::MergeYamlHash;
 use oapi::OApi;
-use paris::{error, info};
+use simplelog::{debug, error, info, warn};
 use sppparse::SparseRoot;
 
 use std::{ffi::OsStr, io::Read, path::PathBuf};
 
+use core::fmt::Display;
+
 use crate::util::HttpMethod;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct OpenAPIData {
-  path: String,
-  method: HttpMethod,
-  uri: String,
-  execution_type: APIType,
+pub struct OpenAPIData {
+  pub path: String,
+  pub method: HttpMethod,
+  pub uri: String,
+  pub execution_type: APIType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum APIType {
-  ARN,
+  Lambda,
   StepFunction,
+  SQS,
 }
 
-pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
+impl Display for APIType {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      APIType::Lambda => write!(f, "Lambda"),
+      APIType::StepFunction => write!(f, "Step Function"),
+      APIType::SQS => write!(f, "SQS"),
+    }
+  }
+}
+
+pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<Vec<OpenAPIData>> {
   info!("Validating OpenAPI documents");
 
   let mut files = find_files(api_path.as_path(), OsStr::new("yml"));
@@ -31,6 +44,10 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
   let mut tags = Vec::new();
   let mut valid = true;
   for file in &files {
+    debug!(
+      "Validating OpenAPI document {:?}",
+      file.file_name().expect("Failed to get file name")
+    );
     match SparseRoot::new_from_file(PathBuf::from_iter([
       std::env::current_dir().expect("Failed to get current directory"),
       file.to_path_buf(),
@@ -45,6 +62,10 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
             e
           );
         } else {
+          debug!(
+            "API document {:?} is valid",
+            file.file_name().expect("Failed to get file name")
+          );
           let root = doc.root_get().expect("Failed to get OpenAPI root");
           if let Some(file_tags) = root.tags() {
             tags.append(&mut file_tags.clone());
@@ -66,6 +87,7 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
     return Err(anyhow!("Invalid OpenAPI documents"));
   }
 
+  debug!("Validating tags");
   if tags.len() > 1 {
     let mut index = 0;
     while index < tags.len() - 1 {
@@ -104,11 +126,11 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<String> {
     );
 
     doc.check().expect("not to have logic errors");
-    Ok(merged_content)
+    Ok(extract_api_data(merged_content)?)
   } else {
-    Ok(open_file(
+    Ok(extract_api_data(open_file(
       files.get(0).expect("Failed to get file path").to_path_buf(),
-    ))
+    ))?)
   }
 }
 
@@ -123,8 +145,9 @@ fn open_file(filename: PathBuf) -> String {
 
 fn merge(files: Vec<String>) -> String {
   let mut hash = MergeYamlHash::new();
-
+  debug!("Merging OpenAPI documents");
   for file in files {
+    debug!("Merging file {:?}", file);
     hash.merge(&file);
   }
 
@@ -132,11 +155,14 @@ fn merge(files: Vec<String>) -> String {
 }
 
 fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
+  debug!("Finding files in {:?}", path);
   let mut files = Vec::new();
   for entry in path.read_dir().expect("Failed to read directory").flatten() {
     if entry.path().is_dir() {
+      debug!("Found directory {:?}", entry.path());
       files.append(&mut find_files(&entry.path(), extension));
     } else if entry.path().extension() == Some(extension) {
+      debug!("Found file {:?}", entry.path());
       files.push(entry.path());
     }
   }
@@ -148,6 +174,7 @@ fn extract_api_data_for_item(
   path: &str,
   method: HttpMethod,
 ) -> anyhow::Result<OpenAPIData> {
+  debug!("Method: {}", method);
   let aws = item
     .extensions
     .get("x-amazon-apigateway-integration")
@@ -156,21 +183,36 @@ fn extract_api_data_for_item(
     .get("uri")
     .expect("Expected 'uri' in 'x-amazon-apigateway-integration' extension");
   let uri_path = uri.as_str().expect("Failed to convert URI to string");
-  if uri_path.contains("states:action") {
-    Ok(OpenAPIData {
-      path: path.to_string(),
-      method,
-      uri: uri_path.to_string(),
-      execution_type: APIType::StepFunction,
-    })
-  } else {
-    Ok(OpenAPIData {
-      path: path.to_string(),
-      method,
-      uri: uri_path.to_string(),
-      execution_type: APIType::ARN,
-    })
+  debug!("URI: {}", uri_path);
+  match method {
+    HttpMethod::Get => {}
+    HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
+      if item.request_body.is_none() && item.parameters.is_empty() {
+        return Err(anyhow!("The {} method for {} does not have a request body or parameters (queries)", method.to_string(), path));
+      }
+    },
+    HttpMethod::Delete => {}
+    HttpMethod::Options => warn!("Double check if OPTIONS method for {} should have a request body and/or parameters (queries)", path),
+    x => return Err(anyhow!("Http method should not be used: {}", x.to_string())),
   }
+  let api_type = match uri_path {
+    x if x.contains("states:action") => APIType::StepFunction,
+    x if x.contains("lambda:path") => APIType::Lambda,
+    x if x.contains("sqs:action") => APIType::SQS,
+    _ => {
+      return Err(anyhow!(
+        "Unknown execution type for URI: {}",
+        uri_path.to_string()
+      ))
+    }
+  };
+  debug!("API execution type: {}", api_type);
+  Ok(OpenAPIData {
+    path: path.to_string(),
+    method,
+    uri: uri_path.to_string(),
+    execution_type: api_type,
+  })
 }
 
 fn extract_api_data(content: String) -> anyhow::Result<Vec<OpenAPIData>> {
@@ -178,6 +220,7 @@ fn extract_api_data(content: String) -> anyhow::Result<Vec<OpenAPIData>> {
   let doc: openapiv3::OpenAPI = serde_yaml::from_str(&content)?;
   let paths = doc.paths;
   for (path, path_item) in paths.paths {
+    debug!("Extracting Path data: {}", path);
     if let Some(get) = &path_item.as_item().unwrap().get {
       data.push(extract_api_data_for_item(&get, &path, HttpMethod::Get)?);
     }
@@ -262,34 +305,34 @@ paths:
       data[0].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[0].execution_type, APIType::ARN);
+    assert_eq!(data[0].execution_type, APIType::Lambda);
     assert_eq!(data[1].path, "/test");
     assert_eq!(data[1].method, HttpMethod::Post);
     assert_eq!(
       data[1].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[1].execution_type, APIType::ARN);
+    assert_eq!(data[1].execution_type, APIType::Lambda);
     assert_eq!(data[2].path, "/test");
     assert_eq!(data[2].method, HttpMethod::Put);
     assert_eq!(
       data[2].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[2].execution_type, APIType::ARN);
+    assert_eq!(data[2].execution_type, APIType::Lambda);
     assert_eq!(data[3].path, "/test");
     assert_eq!(data[3].method, HttpMethod::Patch);
     assert_eq!(
       data[3].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[3].execution_type, APIType::ARN);
+    assert_eq!(data[3].execution_type, APIType::Lambda);
     assert_eq!(data[4].path, "/test");
     assert_eq!(data[4].method, HttpMethod::Delete);
     assert_eq!(
       data[4].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[4].execution_type, APIType::ARN);
+    assert_eq!(data[4].execution_type, APIType::Lambda);
   }
 }

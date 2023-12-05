@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use anyhow::Ok;
 
-use paris::error;
-use paris::info;
+use simplelog::debug;
+use simplelog::error;
+use simplelog::info;
 
 use crate::util::HttpMethod;
 
@@ -168,7 +169,9 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   info!("Validating lambda.tf config");
   let mut lambda_metadata: Vec<Lambda> = Vec::new();
   let mut valid = true;
+  debug!("Read Lambda file: {:?}", lambda);
   let lambda_contents = std::fs::read_to_string(lambda)?;
+  debug!("Parsing Lambda file");
   let body = hcl::parse(&lambda_contents)?;
   let locals = body
     .blocks()
@@ -326,7 +329,7 @@ fn validate_lambda_permissions(
                       .find(|r| r.0.to_string() == *"source_arn")
                       .unwrap();
 
-                    let data = handle_api_gateway_lambda(source_arn.1.to_string());
+                    let data = handle_api_gateway_lambda(source_arn.1.to_string())?;
 
                     s.apis.push(APIPath {
                       method: data[0].trim().into(),
@@ -431,25 +434,32 @@ fn extract_api_and_method(line: &str, method: HttpMethod) -> Option<(String, Str
   }
 }
 
-fn handle_api_gateway_lambda(source_arn: String) -> Vec<String> {
+fn handle_api_gateway_lambda(source_arn: String) -> anyhow::Result<Vec<String>> {
   let section = source_arn.replace('\"', "");
+  debug!("Lambda route: {}", section);
   let parts: Vec<String> = section.split('}').map(|x| x.to_string()).collect();
-  if section.contains('*') {
+  if section.contains("/*/*/*") {
+    Err(anyhow!(
+      "Unsupported route: {}. It should rather be explicit. eg. /*/GET/the/endpoint",
+      section
+    ))
+  } else if section.contains('*') {
     let parts: Vec<String> = section.split('*').map(|x| x.to_string()).collect();
     let section = parts[1].replacen('/', " ", 2);
     let mut data: Vec<String> = section.trim().split(' ').map(|x| x.to_string()).collect();
+    debug!("Data: {:?}", data);
     data[1] = format!("/{}", data[1].trim());
-    data
+    Ok(data)
   } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Get) {
-    [data.0, data.1].to_vec()
+    Ok([data.0, data.1].to_vec())
   } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Post) {
-    [data.0, data.1].into()
+    Ok([data.0, data.1].into())
   } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Put) {
-    [data.0, data.1].into()
+    Ok([data.0, data.1].into())
   } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Delete) {
-    [data.0, data.1].into()
+    Ok([data.0, data.1].into())
   } else if let Some(data) = extract_api_and_method(parts[1].trim(), HttpMethod::Patch) {
-    [data.0, data.1].into()
+    Ok([data.0, data.1].into())
   } else {
     todo!("Need to cater for {}", parts[1].trim());
   }
@@ -458,7 +468,7 @@ fn handle_api_gateway_lambda(source_arn: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::path::PathBuf;
+  // use std::path::PathBuf;
 
   // #[test]
   // fn test_validate_terraform() {
@@ -514,7 +524,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/GET/health\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "GET");
     assert_eq!(data[1], "/api/health");
@@ -523,7 +533,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_with_wildcard() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "POST");
     assert_eq!(data[1], "/postcode-validation");
@@ -533,7 +543,7 @@ mod tests {
   fn test_handle_api_gateway_lambda_with_wildcard_and_path() {
     let source_arn =
       "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "POST");
     assert_eq!(data[1], "/postcode-validation/validate");
@@ -542,7 +552,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_with_wildcard_and_path_and_query() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate?postcode={postcode}\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "POST");
     assert_eq!(data[1], "/postcode-validation/validate?postcode={postcode}");
@@ -551,7 +561,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_with_wildcard_and_path_and_query_and_hash() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate?postcode={postcode}#test\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "POST");
     assert_eq!(
@@ -563,7 +573,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_with_wildcard_and_path_and_query_and_hash_and_slash() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/*/POST/postcode-validation/validate?postcode={postcode}#test/\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "POST");
     assert_eq!(
@@ -575,7 +585,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_post() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/POST/health\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "POST");
     assert_eq!(data[1], "/api/health");
@@ -584,7 +594,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_put() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/PUT/health\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "PUT");
     assert_eq!(data[1], "/api/health");
@@ -593,7 +603,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_delete() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/DELETE/health\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "DELETE");
     assert_eq!(data[1], "/api/health");
@@ -602,7 +612,7 @@ mod tests {
   #[test]
   fn test_handle_api_gateway_lambda_patch() {
     let source_arn = "\"${module.service_api.rest_api_execution_arn}/api/PATCH/health\"";
-    let data = handle_api_gateway_lambda(source_arn.to_string());
+    let data = handle_api_gateway_lambda(source_arn.to_string()).unwrap();
     assert_eq!(data.len(), 2);
     assert_eq!(data[0], "PATCH");
     assert_eq!(data[1], "/api/health");

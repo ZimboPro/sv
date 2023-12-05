@@ -1,189 +1,97 @@
 use openapiv3::Operation;
-use paris::error;
+use simplelog::error;
 
 use crate::{
+  open_api::{APIType, OpenAPIData},
   terraform::{APIPath, Lambda},
-  util::HttpMethod,
 };
 
 pub fn cross_validation(
   lambda_data: Vec<Lambda>,
-  merged_yaml_content: String,
+  open_api_data: Vec<OpenAPIData>,
 ) -> anyhow::Result<()> {
   let mut valid = true;
-  let doc: openapiv3::OpenAPI = serde_yaml::from_str(&merged_yaml_content)?;
   for lambda_item in &lambda_data {
     if let Some(arn_key) = &lambda_item.arn_template_key {
-      lambda_item
-        .apis
-        .iter()
-        .for_each(|api| match doc.paths.paths.get(&api.route) {
-          Some(path_item) => match api.method {
-            HttpMethod::Get => {
-              if let Some(config) = &path_item.as_item().expect("failed to get path data").get {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The GET method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            HttpMethod::Post => {
-              if let Some(config) = &path_item.as_item().expect("failed to get path data").post {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The POST method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            HttpMethod::Put => {
-              if let Some(config) = &path_item.as_item().expect("failed to get path data").put {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The PUT method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            HttpMethod::Delete => {
-              if let Some(config) = &path_item.as_item().expect("failed to get path data").delete {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The DELETE method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            HttpMethod::Patch => {
-              if let Some(config) = &path_item.as_item().expect("failed to get path data").patch {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The PATCH method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            HttpMethod::Options => {
-              if let Some(config) = &path_item
-                .as_item()
-                .expect("failed to get path data")
-                .options
-              {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The OPTIONS method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            HttpMethod::Head => {
-              if let Some(config) = &path_item.as_item().expect("failed to get path data").head {
-                if !validate_aws_api_gateway_integration(config, &lambda_item.key, arn_key, api) {
-                  valid = false;
-                }
-              } else {
-                valid = false;
-                error!(
-                  "The HEAD method is not defined for the path {} for the lambda {}",
-                  api.route, lambda_item.key
-                );
-              }
-            }
-            _ => todo!("Unsupported HTTP method"),
-          },
-          None => {
-            error!(
-              "The path {} is not defined in OpenAPi for the lambda {}",
-              api.route, lambda_item.key
-            );
-          }
-        });
-      let len = merged_yaml_content.matches(arn_key).count();
-      if len == 0 {
-        valid = false;
-        error!(
-          "The Lambda ARN placeholder '{}' is not used in the OpenAPI docs",
-          arn_key
-        );
-      }
+      lambda_item.apis.iter().for_each(|api| {
+        if !validate_lambda_against_open_api(&open_api_data, arn_key, &lambda_item.key, api) {
+          valid = false;
+        }
+      });
     }
   }
   let lambda_apis: Vec<APIPath> = lambda_data.iter().flat_map(|x| x.apis.clone()).collect();
-  doc.paths.iter().for_each(|path| {
-    let uri = path
-      .1
-      .as_item()
-      .unwrap()
-      .extensions
-      .get("x-amazon-apigateway-integration")
-      .expect("Expected 'x-amazon-apigateway-integration' extension")
-      .get("uri")
-      .expect("Expected 'uri' in 'x-amazon-apigateway-integration' extension")
-      .as_str()
-      .expect("Failed to convert URI to string");
-    if uri.contains("states:action") {
-      // TODO: Add support for step functions
-    } else {
-      let temp = lambda_apis.clone();
-      let mut filtered_lambdas = Vec::new();
-      for api in temp {
-        if &api.route == path.0 {
-          filtered_lambdas.push(api.method.to_string().to_lowercase());
-        }
-      }
-      if filtered_lambdas.is_empty() {
-        valid = false;
-        error!("The path {} is not defined in Terraform", path.0);
-      } else {
-        let mut methods = Vec::new();
-        for method in path.1.as_item().expect("Failed to get method data").iter() {
-          methods.push(method.0);
-        }
-        let mut filtered = Vec::new();
-        for method in &methods {
-          if !filtered_lambdas.contains(&method.to_string()) {
-            filtered.push(method);
+  open_api_data
+    .iter()
+    .for_each(|open_api_item| match open_api_item.execution_type {
+      APIType::Lambda => {
+        let temp = lambda_apis.clone();
+        let mut filtered_lambdas = Vec::new();
+        for api in temp {
+          if api.route == open_api_item.path {
+            filtered_lambdas.push(api.method);
           }
         }
-        if !filtered.is_empty() {
+        if filtered_lambdas.is_empty() {
           valid = false;
           error!(
-            "The path {} is not defined in Terraform for the following methods: {:?}",
-            path.0, filtered
+            "The path {} is not defined in Terraform",
+            open_api_item.path
+          );
+        } else if !filtered_lambdas.contains(&open_api_item.method) {
+          valid = false;
+          error!(
+            "The {} method is not defined for the path {} in Terraform",
+            open_api_item.method, open_api_item.path
           );
         }
       }
-    }
-  });
+      APIType::SQS => todo!("Handle SQS"), // TODO: Handle SQS
+      APIType::StepFunction => todo!("Handle Step Functions"), // TODO: Handle Step Functions
+    });
   if !valid {
     return Err(anyhow::anyhow!("Invalid Terraform and OpenAPI documents"));
   }
   Ok(())
+}
+
+fn validate_lambda_against_open_api(
+  open_api_data: &Vec<OpenAPIData>,
+  arn_key: &str,
+  lambda_key: &str,
+  api: &APIPath,
+) -> bool {
+  let mut valid = true;
+  let filtered = open_api_data.iter().filter(|x| x.path == api.route);
+  if filtered.clone().count() == 0 {
+    valid = false;
+    error!(
+      "The path {} is not defined in OpenAPI for the lambda {}",
+      api.route, lambda_key
+    );
+  } else {
+    let filtered = filtered.filter(|x| x.method == api.method);
+    if filtered.clone().count() == 0 {
+      valid = false;
+      error!(
+        "The {} method is not defined for the path {} for the lambda {}",
+        api.method, api.route, lambda_key
+      );
+    } else {
+      filtered.for_each(|x| {
+        if x.execution_type == APIType::Lambda {
+          if !x.uri.contains(arn_key) {
+            valid = false;
+            error!(
+              "The 'uri' doesn't contain the ARN placeholder '{}' in the 'x-amazon-apigateway-integration' extension for {} {} for the lambda {}",
+              arn_key, api.method, api.route, lambda_key
+            );
+          }
+        }
+      });
+    }
+  }
+  valid
 }
 
 pub fn validate_aws_api_gateway_integration(
@@ -220,4 +128,351 @@ pub fn validate_aws_api_gateway_integration(
     }
   }
   valid
+}
+
+// pub fn validate_aws_api_gateway_method(
+//   config: &Operation,
+//   lambda_key: &str,
+//   api: &APIPath,
+// ) -> bool {
+//   let mut valid = true;
+//   match config.request_body {
+//     Some(request_body) => {
+//       if request_body.required.unwrap_or(false) {
+//         valid = false;
+//         error!(
+//           "The 'requestBody' is required for {} {} for the lambda {}",
+//           api.method, api.route, lambda_key
+//         );
+//       }
+//     }
+//     None => {
+//       valid = false;
+//       error!(
+//         "The 'requestBody' doesn't exist for {} {} for the lambda {}",
+//         api.method, api.route, lambda_key
+//       );
+//     }
+//   }
+//   match config.responses.get("200") {
+//     Some(response) => match response.content.get("application/json") {
+//       Some(content) => {
+//         if content.schema.is_none() {
+//           valid = false;
+//           error!(
+//             "The 'schema' doesn't exist for {} {} for the lambda {}",
+//             api.method, api.route, lambda_key
+//           );
+//         }
+//       }
+//       None => {
+//         valid = false;
+//         error!(
+//           "The 'application/json' content doesn't exist for {} {} for the lambda {}",
+//           api.method, api.route, lambda_key
+//         );
+//       }
+//     },
+//     None => {
+//       valid = false;
+//       error!(
+//         "The '200' response doesn't exist for {} {} for the lambda {}",
+//         api.method, api.route, lambda_key
+//       );
+//     }
+//   }
+//   valid
+// }
+
+#[cfg(test)]
+mod tests {
+  use crate::util::HttpMethod;
+
+  use super::*;
+
+  // validate_lambda_against_open_api tests
+  #[test]
+  fn test_validate_lambda_against_open_api_arn() {
+    let open_api_data = vec![OpenAPIData {
+      path: "/test".to_string(),
+      method: HttpMethod::Get,
+      execution_type: APIType::Lambda,
+      uri: "arn".to_string(),
+    }];
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Post,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+  }
+
+  #[test]
+  fn test_validate_lambda_against_open_api_step_function() {
+    let open_api_data = vec![OpenAPIData {
+      path: "/test".to_string(),
+      method: HttpMethod::Get,
+      execution_type: APIType::StepFunction,
+      uri: "state:action".to_string(),
+    }];
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Post,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+  }
+
+  #[test]
+  fn test_validate_lambda_against_open_api_multiple_paths() {
+    let open_api_data = vec![
+      OpenAPIData {
+        path: "/test".to_string(),
+        method: HttpMethod::Get,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test2".to_string(),
+        method: HttpMethod::Get,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+    ];
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test3".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+  }
+
+  #[test]
+  fn test_validate_lambda_against_open_api_multiple_methods() {
+    let open_api_data = vec![
+      OpenAPIData {
+        path: "/test".to_string(),
+        method: HttpMethod::Get,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test".to_string(),
+        method: HttpMethod::Post,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+    ];
+
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Post,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Put,
+      }
+    ));
+  }
+
+  #[test]
+  fn test_validate_lambda_against_open_api_multiple_paths_multiple_methods() {
+    let open_api_data = vec![
+      OpenAPIData {
+        path: "/test".to_string(),
+        method: HttpMethod::Get,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test".to_string(),
+        method: HttpMethod::Post,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test2".to_string(),
+        method: HttpMethod::Get,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test2".to_string(),
+        method: HttpMethod::Post,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test2".to_string(),
+        method: HttpMethod::Put,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test2".to_string(),
+        method: HttpMethod::Patch,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+      OpenAPIData {
+        path: "/test2".to_string(),
+        method: HttpMethod::Delete,
+        execution_type: APIType::Lambda,
+        uri: "arn".to_string(),
+      },
+    ];
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test".to_string(),
+        method: HttpMethod::Post,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Post,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Put,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Patch,
+      }
+    ));
+    assert!(validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test2".to_string(),
+        method: HttpMethod::Delete,
+      }
+    ));
+    assert!(!validate_lambda_against_open_api(
+      &open_api_data,
+      "arn",
+      "test",
+      &APIPath {
+        route: "/test3".to_string(),
+        method: HttpMethod::Get,
+      }
+    ));
+  }
 }
