@@ -25,6 +25,9 @@ struct Args {
   /// Verbose mode
   #[arg(short, long)]
   verbose: bool,
+  /// Used to continue even if the CyclicRef error occurs
+  #[arg(long)]
+  skip_cyclic: bool,
   /// Used to output the arguments to a Markdown file
   #[arg(long, hide = true)]
   markdown: bool,
@@ -68,7 +71,7 @@ fn main() -> anyhow::Result<()> {
   let api_path = args.api_path;
   validating_path(&api_path)?;
   validating_path(&args.terraform)?;
-  let open_api_config = validate_open_api(api_path)?;
+  let open_api_config = validate_open_api(api_path, args.skip_cyclic)?;
   let lambda_data = validate_terraform(args.terraform)?;
   cross_validation(lambda_data, open_api_config)?;
   println!();

@@ -8,12 +8,14 @@ This document contains the help content for the `sv` command-line program.
 
 ## `sv`
 
-**Usage:** `sv --api-path <API_PATH> --terraform <TERRAFORM>`
+**Usage:** `sv [OPTIONS] --api-path <API_PATH> --terraform <TERRAFORM>`
 
 ###### **Options:**
 
 * `-a`, `--api-path <API_PATH>` — The path to the OpenAPI files
 * `-t`, `--terraform <TERRAFORM>` — The path to the Terraform files
+* `-v`, `--verbose` — Verbose mode
+* `--skip-cyclic` — Used to continue even if the CyclicRef error occurs
 * `--markdown` — Used to output the arguments to a Markdown file
 
 

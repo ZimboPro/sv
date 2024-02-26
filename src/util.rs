@@ -10,6 +10,7 @@ pub enum HttpMethod {
   Options,
   Trace,
   Connect,
+  Any,
 }
 
 impl From<String> for HttpMethod {
@@ -24,6 +25,7 @@ impl From<String> for HttpMethod {
       "options" => HttpMethod::Options,
       "trace" => HttpMethod::Trace,
       "connect" => HttpMethod::Connect,
+      "*" => HttpMethod::Any,
       _ => panic!("Invalid HTTP method"),
     }
   }
@@ -41,6 +43,7 @@ impl From<&str> for HttpMethod {
       "options" => HttpMethod::Options,
       "trace" => HttpMethod::Trace,
       "connect" => HttpMethod::Connect,
+      "*" => HttpMethod::Any,
       _ => panic!("Invalid HTTP method"),
     }
   }
@@ -58,6 +61,7 @@ impl std::fmt::Display for HttpMethod {
       HttpMethod::Options => write!(f, "OPTIONS"),
       HttpMethod::Trace => write!(f, "TRACE"),
       HttpMethod::Connect => write!(f, "CONNECT"),
+      HttpMethod::Any => write!(f, "*"),
     }
   }
 }

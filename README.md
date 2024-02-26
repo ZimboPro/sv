@@ -10,6 +10,8 @@ This tool helps to validate AWS Lambda, Terraform and OpenAPI configuration.
 
 * `-a`, `--api-path <API_PATH>` — The path to the OpenAPI files
 * `-t`, `--terraform <TERRAFORM>` — The path to the Terraform files
+* `-v`, `--verbose` — Verbose mode
+* `--skip-cyclic` — Used to continue even if the CyclicRef error occurs
 * `--markdown` — Used to output the arguments to a Markdown file (Hidden command)
 
 ## Assumptions

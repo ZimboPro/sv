@@ -33,6 +33,7 @@ pub enum LambdaType {
   #[default]
   ApiGateway,
   EventBridge,
+  Scheduler,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
@@ -319,6 +320,9 @@ fn validate_lambda_permissions(
                     "events.amazonaws.com" => {
                       s.lambda_type = LambdaType::EventBridge;
                     }
+                    "scheduler.amazonaws.com" => {
+                      s.lambda_type = LambdaType::EventBridge;
+                    }
                     _ => todo!("Need to cater for {} service", service),
                   }
 
@@ -329,7 +333,7 @@ fn validate_lambda_permissions(
                       .unwrap();
 
                     let data = handle_api_gateway_lambda(source_arn.1.to_string())?;
-
+                    debug!("API Gateway Lambda Data: {:?}", data);
                     s.apis.push(APIPath {
                       method: data[0].trim().into(),
                       route: data[1].trim().into(),
@@ -442,10 +446,22 @@ fn handle_api_gateway_lambda(source_arn: String) -> anyhow::Result<Vec<String>> 
       "Unsupported route: {}. It should rather be explicit. eg. /*/GET/the/endpoint",
       section
     ))
-  } else if section.contains('*') {
+  } else if section.contains('*') && section.matches('*').count() == 1 {
     let parts: Vec<String> = section.split('*').map(|x| x.to_string()).collect();
+    debug!("Parts: {:?}", parts);
     let section = parts[1].replacen('/', " ", 2);
+    debug!("Section: {}", section);
     let mut data: Vec<String> = section.trim().split(' ').map(|x| x.to_string()).collect();
+    debug!("Data: {:?}", data);
+    data[1] = format!("/{}", data[1].trim());
+    Ok(data)
+  } else if section.contains('*') && section.matches('*').count() == 2 && section.contains("/*/*") {
+    let parts: Vec<String> = section.split("/*/*").map(|x| x.to_string()).collect();
+    debug!("Parts: {:?}", parts);
+    let section = parts[1].replacen('/', "", 1);
+    debug!("Section: {}", section);
+    let mut data: Vec<String> = section.trim().split(' ').map(|x| x.to_string()).collect();
+    data.insert(0, HttpMethod::Any.to_string());
     debug!("Data: {:?}", data);
     data[1] = format!("/{}", data[1].trim());
     Ok(data)

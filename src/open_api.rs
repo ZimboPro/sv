@@ -1,11 +1,11 @@
 use anyhow::anyhow;
 
 use merge_yaml_hash::MergeYamlHash;
-use oapi::OApi;
+use oapi::{OApi, OApiTag};
 use simplelog::{debug, error, info, warn};
-use sppparse::SparseRoot;
+use sppparse::{SparseError, SparseRoot};
 
-use std::{ffi::OsStr, io::Read, path::PathBuf};
+use std::{f32::consts::E, ffi::OsStr, io::Read, path::PathBuf};
 
 use core::fmt::Display;
 
@@ -36,51 +36,87 @@ impl Display for APIType {
   }
 }
 
-pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<Vec<OpenAPIData>> {
+pub fn validate_open_api(api_path: PathBuf, skip_cyclic: bool) -> anyhow::Result<Vec<OpenAPIData>> {
   info!("Validating OpenAPI documents");
 
   let mut files = find_files(api_path.as_path(), OsStr::new("yml"));
   files.append(&mut find_files(api_path.as_path(), OsStr::new("yaml")));
   let mut tags = Vec::new();
   let mut valid = true;
+  let shared = files.iter().find(|file| {
+    let file_name = file
+      .file_stem()
+      .expect("Failed to get file name")
+      .to_str()
+      .expect("Failed to convert file name to string");
+    file_name == "shared-schemas" || file_name == "shared"
+  });
   for file in &files {
     debug!(
       "Validating OpenAPI document {:?}",
       file.file_name().expect("Failed to get file name")
     );
-    match SparseRoot::new_from_file(PathBuf::from_iter([
-      std::env::current_dir().expect("Failed to get current directory"),
-      file.to_path_buf(),
-    ])) {
-      Ok(open_api_doc) => {
-        let doc: OApi = OApi::new(open_api_doc);
-        if let Err(e) = doc.check() {
-          valid = false;
-          error!(
-            "API document {:?} is not valid: {}",
-            file.file_name().expect("Failed to get file name"),
-            e
-          );
-        } else {
-          debug!(
-            "API document {:?} is valid",
-            file.file_name().expect("Failed to get file name")
-          );
-          let root = doc.root_get().expect("Failed to get OpenAPI root");
-          if let Some(file_tags) = root.tags() {
-            tags.append(&mut file_tags.clone());
-          }
-        }
+    if let Some(shared) = shared {
+      if file == shared {
+        continue;
       }
-      Err(e) => {
-        valid = false;
-        error!(
-          "API document {:?} was not able to be parsed: {}",
-          file.file_name().expect("Failed to get file name"),
-          e
-        );
-      }
-    }
+      let shared_contents = open_file(shared.to_path_buf());
+      let file_contents = open_file(file.to_path_buf());
+      let merged_content = merge(vec![shared_contents, file_contents]);
+      let merged_file = temp_file::with_contents(merged_content.as_bytes());
+      validate_file(
+        merged_file.path().to_path_buf(),
+        file.to_path_buf(),
+        &mut tags,
+        &mut valid,
+        skip_cyclic,
+      );
+    } else {
+      // PathBuf::from_iter([
+      //   std::env::current_dir().expect("Failed to get current directory"),
+      //   file.to_path_buf(),
+      // ])
+      validate_file(
+        PathBuf::from_iter([
+          std::env::current_dir().expect("Failed to get current directory"),
+          file.to_path_buf(),
+        ]),
+        file.to_path_buf(),
+        &mut tags,
+        &mut valid,
+        skip_cyclic,
+      );
+    };
+    // match SparseRoot::new_from_file(path) {
+    //   Ok(open_api_doc) => {
+    //     let doc: OApi = OApi::new(open_api_doc);
+    //     if let Err(e) = doc.check() {
+    //       valid = false;
+    //       error!(
+    //         "API document {:?} is not valid: {}",
+    //         file.file_name().expect("Failed to get file name"),
+    //         e
+    //       );
+    //     } else {
+    //       debug!(
+    //         "API document {:?} is valid",
+    //         file.file_name().expect("Failed to get file name")
+    //       );
+    //       let root = doc.root_get().expect("Failed to get OpenAPI root");
+    //       if let Some(file_tags) = root.tags() {
+    //         tags.append(&mut file_tags.clone());
+    //       }
+    //     }
+    //   }
+    //   Err(e) => {
+    //     valid = false;
+    //     error!(
+    //       "API document {:?} was not able to be parsed: {}",
+    //       file.file_name().expect("Failed to get file name"),
+    //       e
+    //     );
+    //   }
+    // }
   }
 
   if !valid {
@@ -121,16 +157,95 @@ pub fn validate_open_api(api_path: PathBuf) -> anyhow::Result<Vec<OpenAPIData>> 
     }
     let merged_content = merge(files_content);
     let merged_file = temp_file::with_contents(merged_content.as_bytes());
-    let doc: OApi = OApi::new(
-      SparseRoot::new_from_file(merged_file.path().to_path_buf()).expect("to parse the OpenAPI"),
-    );
+    match SparseRoot::new_from_file(merged_file.path().to_path_buf()) {
+      Ok(s) => {
+        let doc: OApi = OApi::new(s);
 
-    doc.check().expect("not to have logic errors");
-    Ok(extract_api_data(merged_content)?)
+        doc.check().expect("not to have logic errors");
+        Ok(extract_api_data(merged_content)?)
+      }
+      Err(e) => match e {
+        SparseError::CyclicRef => {
+          if skip_cyclic {
+            warn!("Merged API document was not able to be parsed: {}", e);
+            Ok(extract_api_data(merged_content)?)
+          } else {
+            Err(anyhow!(
+              "Merged API document was not able to be parsed: {}",
+              e
+            ))
+          }
+        }
+        _ => {
+          return Err(anyhow!(
+            "Failed to validate combined OpenAPI documents: {}",
+            e
+          ));
+        }
+      },
+    }
   } else {
     Ok(extract_api_data(open_file(
       files.get(0).expect("Failed to get file path").to_path_buf(),
     ))?)
+  }
+}
+
+fn validate_file(
+  path: PathBuf,
+  file: PathBuf,
+  tags: &mut Vec<OApiTag>,
+  valid: &mut bool,
+  skip_cyclic: bool,
+) {
+  match SparseRoot::new_from_file(path) {
+    Ok(open_api_doc) => {
+      let doc: OApi = OApi::new(open_api_doc);
+      if let Err(e) = doc.check() {
+        *valid = false;
+        error!(
+          "API document {:?} is not valid: {}",
+          file.file_name().expect("Failed to get file name"),
+          e
+        );
+      } else {
+        debug!(
+          "API document {:?} is valid",
+          file.file_name().expect("Failed to get file name")
+        );
+        let root = doc.root_get().expect("Failed to get OpenAPI root");
+        if let Some(file_tags) = root.tags() {
+          tags.append(&mut file_tags.clone());
+        }
+      }
+    }
+    Err(e) => match e {
+      SparseError::CyclicRef => {
+        if skip_cyclic {
+          warn!(
+            "API document {:?} was not able to be parsed: {}",
+            file.file_name().expect("Failed to get file name"),
+            e
+          );
+          return;
+        } else {
+          *valid = false;
+          error!(
+            "API document {:?} was not able to be parsed: {}",
+            file.file_name().expect("Failed to get file name"),
+            e
+          );
+        }
+      }
+      _ => {
+        *valid = false;
+        error!(
+          "API document {:?} was not able to be parsed: {}",
+          file.file_name().expect("Failed to get file name"),
+          e
+        );
+      }
+    },
   }
 }
 
@@ -188,7 +303,7 @@ fn extract_api_data_for_item(
     HttpMethod::Get => {}
     HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
       if item.request_body.is_none() && item.parameters.is_empty() {
-        return Err(anyhow!("The {} method for {} does not have a request body or parameters (queries)", method.to_string(), path));
+        warn!("The {} method for {} does not have a request body or parameters (queries)", method.to_string(), path);
       }
     },
     HttpMethod::Delete => {}

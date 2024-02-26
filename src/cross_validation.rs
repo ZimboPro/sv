@@ -1,9 +1,10 @@
 use openapiv3::Operation;
-use simplelog::error;
+use simplelog::{debug, error, warn};
 
 use crate::{
   open_api::{APIType, OpenAPIData},
   terraform::{APIPath, Lambda},
+  util::HttpMethod,
 };
 
 pub fn cross_validation(
@@ -32,13 +33,16 @@ pub fn cross_validation(
             filtered_lambdas.push(api.method);
           }
         }
+        debug!("Filtered lambdas: {:?}", filtered_lambdas);
         if filtered_lambdas.is_empty() {
           valid = false;
           error!(
             "The path {} is not defined in Terraform",
             open_api_item.path
           );
-        } else if !filtered_lambdas.contains(&open_api_item.method) {
+        } else if !filtered_lambdas.contains(&open_api_item.method)
+          && !filtered_lambdas.contains(&HttpMethod::Any)
+        {
           valid = false;
           error!(
             "The {} method is not defined for the path {} in Terraform",
@@ -46,8 +50,8 @@ pub fn cross_validation(
           );
         }
       }
-      APIType::SQS => todo!("Handle SQS"), // TODO: Handle SQS
-      APIType::StepFunction => todo!("Handle Step Functions"), // TODO: Handle Step Functions
+      APIType::SQS => warn!("SQS Functions are currently not handled"), // TODO: Handle SQS
+      APIType::StepFunction => warn!("Step Functions are currently not handled"), // TODO: Handle Step Functions
     });
   if !valid {
     return Err(anyhow::anyhow!("Invalid Terraform and OpenAPI documents"));
@@ -61,6 +65,7 @@ fn validate_lambda_against_open_api(
   lambda_key: &str,
   api: &APIPath,
 ) -> bool {
+  debug!("API details: {:?}", api);
   let mut valid = true;
   let filtered = open_api_data.iter().filter(|x| x.path == api.route);
   if filtered.clone().count() == 0 {
@@ -70,7 +75,12 @@ fn validate_lambda_against_open_api(
       api.route, lambda_key
     );
   } else {
-    let filtered = filtered.filter(|x| x.method == api.method);
+    debug!("Routes: {:#?}", filtered.clone().collect::<Vec<_>>());
+    let filtered = filtered.filter(|x| api.method == HttpMethod::Any || x.method == api.method);
+    debug!(
+      "Filtered routes and methods: {:#?}",
+      filtered.clone().collect::<Vec<_>>()
+    );
     if filtered.clone().count() == 0 {
       valid = false;
       error!(
