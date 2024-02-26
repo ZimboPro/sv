@@ -69,6 +69,7 @@ fn check_if_update_is_available() -> anyhow::Result<()> {
   if !greater_releases.is_empty() {
     let mut latest = greater_releases.first().unwrap().to_owned().clone();
     for release in greater_releases {
+      println!("{}: {:#?}", release.version, release.assets);
       latest = if self_update::version::bump_is_greater(&latest.version, &release.version).unwrap()
       {
         latest
@@ -96,16 +97,21 @@ fn update_binary(config: Config) -> anyhow::Result<()> {
     ColorChoice::Auto,
   )
   .unwrap();
+
   info!("Updating binary to the latest version");
   let mut status_builder = self_update::backends::github::Update::configure();
-  let status = status_builder
+  let mut status_builder = status_builder
     .repo_owner("ZimboPro")
     .repo_name("sv")
     .bin_name("sv")
     .show_download_progress(true)
-    .current_version(cargo_crate_version!())
-    .build()?
-    .update()?;
+    .current_version(cargo_crate_version!());
+  #[cfg(windows)]
+  {
+    status_builder = status_builder.target("x86_64-pc-windows-msvc.zip");
+  }
+
+  let status = status_builder.build()?.update()?;
 
   info!("Updated successfully to {}", status.version());
   Ok(())
