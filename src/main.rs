@@ -1,6 +1,6 @@
 use self_update::cargo_crate_version;
 use simplelog::{
-  info, warn, Color, ColorChoice, Config, ConfigBuilder, Level, LevelFilter, TermLogger,
+  debug, info, warn, Color, ColorChoice, Config, ConfigBuilder, Level, LevelFilter, TermLogger,
   TerminalMode,
 };
 use sv::{self, cross_validation::cross_validation, open_api, terraform};
@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use terraform::validate_terraform;
 
 #[derive(Debug, Parser, PartialEq, Eq)]
+#[command(author, version, about, long_about = None)]
 enum Commands {
   /// Update the binary to the latest version
   Update,
@@ -27,7 +28,6 @@ enum Commands {
 }
 
 #[derive(Args, Debug, PartialEq, Eq)]
-#[command(author, version, about, long_about = None)]
 struct Arguments {
   /// The path to the OpenAPI files
   #[arg(short, long)]
@@ -52,16 +52,20 @@ fn validating_path(path: &PathBuf) -> anyhow::Result<()> {
   Ok(())
 }
 
+/// Check if there is an update available
 fn check_if_update_is_available() -> anyhow::Result<()> {
+  debug!("Checking for updates");
   let mut rel_builder = self_update::backends::github::ReleaseList::configure();
   rel_builder.repo_owner("ZimboPro");
   let releases = rel_builder.repo_name("sv").build()?.fetch()?;
-
+  debug!("Available releases: {:?}", releases);
   let current = cargo_crate_version!();
   let greater_releases = releases
     .iter()
     .filter(|release| self_update::version::bump_is_greater(current, &release.version).unwrap())
     .collect::<Vec<_>>();
+  debug!("Current version: {}", current);
+  debug!("Greater releases: {:?}", greater_releases);
   if !greater_releases.is_empty() {
     let mut latest = greater_releases.first().unwrap().to_owned().clone();
     for release in greater_releases {
@@ -72,11 +76,13 @@ fn check_if_update_is_available() -> anyhow::Result<()> {
         release.clone()
       };
     }
-
+    println!();
+    info!("***************************************");
     info!(
       "There is a new version available: {}",
       latest.version.to_string()
     );
+    info!("***************************************\n");
     info!("Run `sv update` to update to the latest version.");
   }
   Ok(())
@@ -122,17 +128,16 @@ fn main() -> anyhow::Result<()> {
   match args {
     Commands::Update => update_binary(config),
     Commands::Verify(args) => {
-      if let Err(_) = check_if_update_is_available() {
-        warn!("Failed to check for updates");
-      }
-
       let level = if args.verbose {
         LevelFilter::Debug
       } else {
         LevelFilter::Info
       };
-
       TermLogger::init(level, config, TerminalMode::Stdout, ColorChoice::Auto).unwrap();
+      if let Err(_) = check_if_update_is_available() {
+        warn!("Failed to check for updates");
+      }
+
       let api_path = args.api_path;
       validating_path(&api_path)?;
       validating_path(&args.terraform)?;

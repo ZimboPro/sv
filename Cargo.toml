@@ -1,11 +1,12 @@
 [package]
 name = "sv"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 license = "MIT"
 authors = ["Leslie de Jager"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 repository = "https://github.com/ZimboPro/sv"
+description = "A tool to check that the OpenAPI and HCL files in a project are in sync"
 
 [package.metadata.wix]
 upgrade-guid = "FB7A2531-E23B-43D9-B341-12545822B743"
