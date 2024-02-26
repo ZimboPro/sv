@@ -6,11 +6,12 @@ license = "MIT"
 authors = ["Leslie de Jager"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 repository = "https://github.com/ZimboPro/sv"
-description = "A tool to check that the OpenAPI and HCL files in a project are in sync"
 
 [package.metadata.wix]
 upgrade-guid = "FB7A2531-E23B-43D9-B341-12545822B743"
 path-guid = "2B3352CD-4EC5-46CC-BB9D-1AF7A66845D0"
+license = false
+eula = false
 
 [dependencies]
 home = "0.5.3"
@@ -44,16 +45,16 @@ lto = "thin"
 # Config for 'cargo dist'
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.4.3"
+cargo-dist-version = "0.8.0"
 # CI backends to support
 ci = ["github"]
 # The installers to generate for each app
 installers = ["shell", "msi"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
-  "x86_64-unknown-linux-gnu",
   "aarch64-apple-darwin",
   "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
 ]
 # Publish jobs to run in CI
