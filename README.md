@@ -4,15 +4,33 @@ This tool helps to validate AWS Lambda, Terraform and OpenAPI configuration.
 
 ## Usage
 
-`sv --api-path <API_PATH> --terraform <TERRAFORM>`
+`sv <COMMAND>`
+
+###### **Subcommands:**
+
+* `update` — Update the binary to the latest version
+* `verify` — Verify the OpenAPI and Terraform files
+
+## `sv update`
+
+Update the binary to the latest version
+
+**Usage:** `sv update`
+
+## `sv verify`
+
+Verify the OpenAPI and Terraform files
+
+**Usage:** `sv verify [OPTIONS] --api-path <API_PATH> --terraform <TERRAFORM>`
 
 ###### **Options:**
 
 * `-a`, `--api-path <API_PATH>` — The path to the OpenAPI files
 * `-t`, `--terraform <TERRAFORM>` — The path to the Terraform files
 * `-v`, `--verbose` — Verbose mode
+
 * `--skip-cyclic` — Used to continue even if the CyclicRef error occurs
-* `--markdown` — Used to output the arguments to a Markdown file (Hidden command)
+
 
 ## Assumptions
 
