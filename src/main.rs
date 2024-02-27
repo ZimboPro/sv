@@ -148,7 +148,7 @@ fn main() -> anyhow::Result<()> {
         LevelFilter::Info
       };
       TermLogger::init(level, config, TerminalMode::Stdout, ColorChoice::Auto).unwrap();
-      if let Err(_) = check_if_update_is_available() {
+      if check_if_update_is_available().is_err() {
         warn!("Failed to check for updates");
       }
 
