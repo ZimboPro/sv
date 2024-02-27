@@ -11,6 +11,7 @@ use simplelog::info;
 
 use crate::util::HttpMethod;
 
+/// The Lambda data that gets extracted
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Lambda {
   /// Terraform lambda key
@@ -24,53 +25,33 @@ pub struct Lambda {
   /// ARN template key
   pub arn_template_key: Option<String>,
   /// Lambda type
-  pub lambda_type: LambdaType,
+  pub lambda_type: LambdaTriggerType,
 }
 
+/// The Lambda trigger type
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub enum LambdaType {
+pub enum LambdaTriggerType {
+  /// Step Function
   StepFunction,
+  /// API Gateway
   #[default]
   ApiGateway,
+  /// Event Bridge
   EventBridge,
+  /// Scheduler
   Scheduler,
 }
 
+/// API path data
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
 pub struct APIPath {
+  /// The HTTP method e.g. GET, POST
   pub method: HttpMethod,
+  /// The route path
   pub route: String,
 }
 
-// fn extract_value(bytes: &str) -> IResult<&str, String> {
-//     let (remaining, (_, val)) = tuple((tag("\""), take_till(|c| c == '"')))(bytes)?;
-//     Ok((remaining, val.to_string()))
-// }
-
-// fn till_lambdas(bytes: &str) -> IResult<&str, ()> {
-//     let (remaining, _) = take_until("lambdas = {")(bytes)?;
-//     Ok((remaining, ()))
-// }
-
-// fn extract_key(bytes: &str) -> IResult<&str, String> {
-//     let (r, val) = take_till(|c| is_space(c) || c == '=')(bytes)?;
-//     Ok((r, val.to_string()))
-// }
-
-// fn parse_lambda_content(bytes: &str) -> IResult<&str, Vec<Lambda>> {
-//     let (remaining, (_, _, _, key, _, _, _, val)) = tuple((
-//         till_lambdas,
-//         tag("lambdas = {"),
-//         multispace0,
-//         extract_key,
-//         take_until("handler ="),
-//         tag("handler ="),
-//         multispace0,
-//         extract_value,
-//     ));
-//     Ok(())
-// }
-
+/// Validate the Terraform files and extract the data
 pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   validate_terraform_files(&terraform)?;
   let lambda = terraform.join("lambda.tf");
@@ -144,6 +125,7 @@ pub fn validate_terraform(terraform: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   }
 }
 
+/// Finds all the files with the extension in the directory recursively for Terraform files
 fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
   let mut files = Vec::new();
   for entry in path.read_dir().expect("Failed to read directory").flatten() {
@@ -156,6 +138,7 @@ fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
   files
 }
 
+/// Check if all the Terraform files are valid
 fn validate_terraform_files(path: &Path) -> anyhow::Result<()> {
   info!("Validating Terraform files");
   let files = find_files(path, OsStr::new("tf"));
@@ -166,6 +149,7 @@ fn validate_terraform_files(path: &Path) -> anyhow::Result<()> {
   Ok(())
 }
 
+/// Validate and extract from the lambda.tf file
 fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   info!("Validating lambda.tf config");
   let mut lambda_metadata: Vec<Lambda> = Vec::new();
@@ -263,6 +247,7 @@ fn validate_lambda(lambda: PathBuf) -> anyhow::Result<Vec<Lambda>> {
   Ok(lambda_metadata)
 }
 
+/// Validate and extract data from lambda_permissions.tf
 fn validate_lambda_permissions(
   lambda_permissions: PathBuf,
   lambda_metadata: &mut [Lambda],
@@ -315,18 +300,18 @@ fn validate_lambda_permissions(
                   let service = principal.1.to_string().replace('\"', "");
                   match service.as_str() {
                     "apigateway.amazonaws.com" => {
-                      s.lambda_type = LambdaType::ApiGateway;
+                      s.lambda_type = LambdaTriggerType::ApiGateway;
                     }
                     "events.amazonaws.com" => {
-                      s.lambda_type = LambdaType::EventBridge;
+                      s.lambda_type = LambdaTriggerType::EventBridge;
                     }
                     "scheduler.amazonaws.com" => {
-                      s.lambda_type = LambdaType::EventBridge;
+                      s.lambda_type = LambdaTriggerType::EventBridge;
                     }
                     _ => todo!("Need to cater for {} service", service),
                   }
 
-                  if s.lambda_type == LambdaType::ApiGateway {
+                  if s.lambda_type == LambdaTriggerType::ApiGateway {
                     let source_arn = route_obj
                       .iter()
                       .find(|r| r.0.to_string() == *"source_arn")
@@ -375,6 +360,7 @@ fn validate_lambda_permissions(
   Ok(())
 }
 
+/// Validate and extract data from api_gateway.tf
 fn extract_api_gw(api_gw: PathBuf, mut lambda: Vec<Lambda>) -> anyhow::Result<Vec<Lambda>> {
   info!("Validating api_gateway.tf config");
   let contents = std::fs::read_to_string(api_gw)?;
@@ -403,6 +389,7 @@ fn extract_api_gw(api_gw: PathBuf, mut lambda: Vec<Lambda>) -> anyhow::Result<Ve
   Ok(lambda)
 }
 
+/// Validate and extract data from step_function.tf
 fn extract_step_function(
   mut lambda_data: Vec<Lambda>,
   step_fn: PathBuf,
@@ -423,6 +410,7 @@ fn extract_step_function(
   Ok(lambda_data)
 }
 
+/// Extract the API endpoint and HTTP method
 fn extract_api_and_method(line: &str, method: HttpMethod) -> Option<(String, String)> {
   if line.contains(method.to_string().to_uppercase().as_str()) {
     Some((
@@ -437,6 +425,7 @@ fn extract_api_and_method(line: &str, method: HttpMethod) -> Option<(String, Str
   }
 }
 
+/// Extract API endpoint and HTTP method from the ARN
 fn handle_api_gateway_lambda(source_arn: String) -> anyhow::Result<Vec<String>> {
   let section = source_arn.replace('\"', "");
   debug!("Lambda route: {}", section);

@@ -11,31 +11,43 @@ use core::fmt::Display;
 
 use crate::util::HttpMethod;
 
+/// OpenAPI data that is extracted
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAPIData {
+  /// The route path
   pub path: String,
+  /// The HTTP method e.g. GET, POST
   pub method: HttpMethod,
+  /// The AWS URI
   pub uri: String,
-  pub execution_type: APIType,
+  /// The Execution type
+  pub execution_type: ExecutionType,
 }
 
+/// The API Execution type
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum APIType {
+pub enum ExecutionType {
+  /// API links to a Lambda function
   Lambda,
+  /// API links to a Step Function
   StepFunction,
+  /// API links to SQS
   SQS,
 }
 
-impl Display for APIType {
+impl Display for ExecutionType {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      APIType::Lambda => write!(f, "Lambda"),
-      APIType::StepFunction => write!(f, "Step Function"),
-      APIType::SQS => write!(f, "SQS"),
+      ExecutionType::Lambda => write!(f, "Lambda"),
+      ExecutionType::StepFunction => write!(f, "Step Function"),
+      ExecutionType::SQS => write!(f, "SQS"),
     }
   }
 }
 
+/// Validates individual OpenAPI documents and docs merged together
+///
+/// If a `shared-schema` or `shared` file exists, it is merge with each file before being validated
 pub fn validate_open_api(api_path: PathBuf, skip_cyclic: bool) -> anyhow::Result<Vec<OpenAPIData>> {
   info!("Validating OpenAPI documents");
 
@@ -72,10 +84,6 @@ pub fn validate_open_api(api_path: PathBuf, skip_cyclic: bool) -> anyhow::Result
         skip_cyclic,
       );
     } else {
-      // PathBuf::from_iter([
-      //   std::env::current_dir().expect("Failed to get current directory"),
-      //   file.to_path_buf(),
-      // ])
       validate_file(
         PathBuf::from_iter([
           std::env::current_dir().expect("Failed to get current directory"),
@@ -87,36 +95,6 @@ pub fn validate_open_api(api_path: PathBuf, skip_cyclic: bool) -> anyhow::Result
         skip_cyclic,
       );
     };
-    // match SparseRoot::new_from_file(path) {
-    //   Ok(open_api_doc) => {
-    //     let doc: OApi = OApi::new(open_api_doc);
-    //     if let Err(e) = doc.check() {
-    //       valid = false;
-    //       error!(
-    //         "API document {:?} is not valid: {}",
-    //         file.file_name().expect("Failed to get file name"),
-    //         e
-    //       );
-    //     } else {
-    //       debug!(
-    //         "API document {:?} is valid",
-    //         file.file_name().expect("Failed to get file name")
-    //       );
-    //       let root = doc.root_get().expect("Failed to get OpenAPI root");
-    //       if let Some(file_tags) = root.tags() {
-    //         tags.append(&mut file_tags.clone());
-    //       }
-    //     }
-    //   }
-    //   Err(e) => {
-    //     valid = false;
-    //     error!(
-    //       "API document {:?} was not able to be parsed: {}",
-    //       file.file_name().expect("Failed to get file name"),
-    //       e
-    //     );
-    //   }
-    // }
   }
 
   if !valid {
@@ -192,6 +170,7 @@ pub fn validate_open_api(api_path: PathBuf, skip_cyclic: bool) -> anyhow::Result
   }
 }
 
+/// Validates the file
 fn validate_file(
   path: PathBuf,
   file: PathBuf,
@@ -249,6 +228,7 @@ fn validate_file(
   }
 }
 
+/// Gets a file's contents
 fn open_file(filename: PathBuf) -> String {
   let mut file = std::fs::File::open(filename).expect("Couldn't find or open the file");
   let mut contents = String::new();
@@ -269,6 +249,7 @@ fn merge(files: Vec<String>) -> String {
   hash.to_string()
 }
 
+/// Finds all the files with the extension in the directory recursively
 fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
   debug!("Finding files in {:?}", path);
   let mut files = Vec::new();
@@ -284,6 +265,7 @@ fn find_files(path: &std::path::Path, extension: &OsStr) -> Vec<PathBuf> {
   files
 }
 
+/// Extracts the API data from the OpenAPI operation
 fn extract_api_data_for_item(
   item: &openapiv3::Operation,
   path: &str,
@@ -311,9 +293,9 @@ fn extract_api_data_for_item(
     x => return Err(anyhow!("Http method should not be used: {}", x.to_string())),
   }
   let api_type = match uri_path {
-    x if x.contains("states:action") => APIType::StepFunction,
-    x if x.contains("lambda:path") => APIType::Lambda,
-    x if x.contains("sqs:action") => APIType::SQS,
+    x if x.contains("states:action") => ExecutionType::StepFunction,
+    x if x.contains("lambda:path") => ExecutionType::Lambda,
+    x if x.contains("sqs:action") => ExecutionType::SQS,
     _ => {
       return Err(anyhow!(
         "Unknown execution type for URI: {}",
@@ -330,6 +312,7 @@ fn extract_api_data_for_item(
   })
 }
 
+/// Extract the API data from the merged file content
 fn extract_api_data(content: String) -> anyhow::Result<Vec<OpenAPIData>> {
   let mut data = Vec::new();
   let doc: openapiv3::OpenAPI = serde_yaml::from_str(&content)?;
@@ -445,35 +428,35 @@ paths:
       data[0].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[0].execution_type, APIType::Lambda);
+    assert_eq!(data[0].execution_type, ExecutionType::Lambda);
     assert_eq!(data[1].path, "/test");
     assert_eq!(data[1].method, HttpMethod::Post);
     assert_eq!(
       data[1].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[1].execution_type, APIType::Lambda);
+    assert_eq!(data[1].execution_type, ExecutionType::Lambda);
     assert_eq!(data[2].path, "/test");
     assert_eq!(data[2].method, HttpMethod::Put);
     assert_eq!(
       data[2].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[2].execution_type, APIType::Lambda);
+    assert_eq!(data[2].execution_type, ExecutionType::Lambda);
     assert_eq!(data[3].path, "/test");
     assert_eq!(data[3].method, HttpMethod::Patch);
     assert_eq!(
       data[3].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[3].execution_type, APIType::Lambda);
+    assert_eq!(data[3].execution_type, ExecutionType::Lambda);
     assert_eq!(data[4].path, "/test");
     assert_eq!(data[4].method, HttpMethod::Delete);
     assert_eq!(
       data[4].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[4].execution_type, APIType::Lambda);
+    assert_eq!(data[4].execution_type, ExecutionType::Lambda);
   }
 
   #[test]
@@ -549,35 +532,35 @@ paths:
       data[0].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[0].execution_type, APIType::Lambda);
+    assert_eq!(data[0].execution_type, ExecutionType::Lambda);
     assert_eq!(data[1].path, "/test");
     assert_eq!(data[1].method, HttpMethod::Post);
     assert_eq!(
       data[1].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[1].execution_type, APIType::Lambda);
+    assert_eq!(data[1].execution_type, ExecutionType::Lambda);
     assert_eq!(data[2].path, "/test");
     assert_eq!(data[2].method, HttpMethod::Put);
     assert_eq!(
       data[2].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[2].execution_type, APIType::Lambda);
+    assert_eq!(data[2].execution_type, ExecutionType::Lambda);
     assert_eq!(data[3].path, "/test");
     assert_eq!(data[3].method, HttpMethod::Patch);
     assert_eq!(
       data[3].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[3].execution_type, APIType::Lambda);
+    assert_eq!(data[3].execution_type, ExecutionType::Lambda);
     assert_eq!(data[4].path, "/test");
     assert_eq!(data[4].method, HttpMethod::Delete);
     assert_eq!(
       data[4].uri,
       "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:Test/invocations"
     );
-    assert_eq!(data[4].execution_type, APIType::Lambda);
+    assert_eq!(data[4].execution_type, ExecutionType::Lambda);
   }
 
   //   #[test]

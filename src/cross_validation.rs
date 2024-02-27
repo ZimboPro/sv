@@ -2,7 +2,7 @@ use openapiv3::Operation;
 use simplelog::{debug, error, warn};
 
 use crate::{
-  open_api::{APIType, OpenAPIData},
+  open_api::{ExecutionType, OpenAPIData},
   terraform::{APIPath, Lambda},
   util::HttpMethod,
 };
@@ -25,7 +25,7 @@ pub fn cross_validation(
   open_api_data
     .iter()
     .for_each(|open_api_item| match open_api_item.execution_type {
-      APIType::Lambda => {
+      ExecutionType::Lambda => {
         let temp = lambda_apis.clone();
         let mut filtered_lambdas = Vec::new();
         for api in temp {
@@ -50,8 +50,8 @@ pub fn cross_validation(
           );
         }
       }
-      APIType::SQS => warn!("SQS Functions are currently not handled"), // TODO: Handle SQS
-      APIType::StepFunction => warn!("Step Functions are currently not handled"), // TODO: Handle Step Functions
+      ExecutionType::SQS => warn!("SQS Functions are currently not handled"), // TODO: Handle SQS
+      ExecutionType::StepFunction => warn!("Step Functions are currently not handled"), // TODO: Handle Step Functions
     });
   if !valid {
     return Err(anyhow::anyhow!("Invalid Terraform and OpenAPI documents"));
@@ -89,7 +89,7 @@ fn validate_lambda_against_open_api(
       );
     } else {
       filtered.for_each(|x| {
-        if x.execution_type == APIType::Lambda && !x.uri.contains(arn_key) {
+        if x.execution_type == ExecutionType::Lambda && !x.uri.contains(arn_key) {
           valid = false;
           error!(
             "The 'uri' doesn't contain the ARN placeholder '{}' in the 'x-amazon-apigateway-integration' extension for {} {} for the lambda {}",
@@ -204,7 +204,7 @@ mod tests {
     let open_api_data = vec![OpenAPIData {
       path: "/test".to_string(),
       method: HttpMethod::Get,
-      execution_type: APIType::Lambda,
+      execution_type: ExecutionType::Lambda,
       uri: "arn".to_string(),
     }];
     assert!(validate_lambda_against_open_api(
@@ -241,7 +241,7 @@ mod tests {
     let open_api_data = vec![OpenAPIData {
       path: "/test".to_string(),
       method: HttpMethod::Get,
-      execution_type: APIType::StepFunction,
+      execution_type: ExecutionType::StepFunction,
       uri: "state:action".to_string(),
     }];
     assert!(validate_lambda_against_open_api(
@@ -279,13 +279,13 @@ mod tests {
       OpenAPIData {
         path: "/test".to_string(),
         method: HttpMethod::Get,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test2".to_string(),
         method: HttpMethod::Get,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
     ];
@@ -324,13 +324,13 @@ mod tests {
       OpenAPIData {
         path: "/test".to_string(),
         method: HttpMethod::Get,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test".to_string(),
         method: HttpMethod::Post,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
     ];
@@ -370,43 +370,43 @@ mod tests {
       OpenAPIData {
         path: "/test".to_string(),
         method: HttpMethod::Get,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test".to_string(),
         method: HttpMethod::Post,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test2".to_string(),
         method: HttpMethod::Get,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test2".to_string(),
         method: HttpMethod::Post,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test2".to_string(),
         method: HttpMethod::Put,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test2".to_string(),
         method: HttpMethod::Patch,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
       OpenAPIData {
         path: "/test2".to_string(),
         method: HttpMethod::Delete,
-        execution_type: APIType::Lambda,
+        execution_type: ExecutionType::Lambda,
         uri: "arn".to_string(),
       },
     ];

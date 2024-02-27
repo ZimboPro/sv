@@ -1,3 +1,4 @@
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 use self_update::cargo_crate_version;
 use simplelog::{
   debug, info, warn, Color, ColorChoice, Config, ConfigBuilder, Level, LevelFilter, TermLogger,
@@ -15,20 +16,25 @@ use std::path::PathBuf;
 // extern crate log;
 use terraform::validate_terraform;
 
+const REPO_OWNER: &str = "ZimboPro";
+const REPO_NAME: &str = "sv";
+
+/// Top level commands
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[command(author, version, about, long_about = None)]
 enum Commands {
   /// Update the binary to the latest version
   Update,
   /// Verify the OpenAPI and Terraform files
-  Verify(Arguments),
+  Verify(VerifyArguments),
   /// Output the markdown help page
   #[command(hide = true)]
   Markdown,
 }
 
+/// Arguments for verifying
 #[derive(Args, Debug, PartialEq, Eq)]
-struct Arguments {
+struct VerifyArguments {
   /// The path to the OpenAPI files
   #[arg(short, long)]
   api_path: PathBuf,
@@ -43,6 +49,7 @@ struct Arguments {
   skip_cyclic: bool,
 }
 
+/// Check if the path exists and is a folder else return an Error
 fn validating_path(path: &PathBuf) -> anyhow::Result<()> {
   if !path.exists() {
     return Err(anyhow::anyhow!("Path {:?} does not exist", path));
@@ -56,8 +63,8 @@ fn validating_path(path: &PathBuf) -> anyhow::Result<()> {
 fn check_if_update_is_available() -> anyhow::Result<()> {
   debug!("Checking for updates");
   let mut rel_builder = self_update::backends::github::ReleaseList::configure();
-  rel_builder.repo_owner("ZimboPro");
-  let releases = rel_builder.repo_name("sv").build()?.fetch()?;
+  rel_builder.repo_owner(REPO_OWNER);
+  let releases = rel_builder.repo_name(REPO_NAME).build()?.fetch()?;
   debug!("Available releases: {:?}", releases);
   let current = cargo_crate_version!();
   let greater_releases = releases
@@ -65,7 +72,7 @@ fn check_if_update_is_available() -> anyhow::Result<()> {
     .filter(|release| self_update::version::bump_is_greater(current, &release.version).unwrap())
     .collect::<Vec<_>>();
   debug!("Current version: {}", current);
-  debug!("Greater releases: {:?}", greater_releases);
+  debug!("Greater releases: {:#?}", greater_releases);
   if !greater_releases.is_empty() {
     let mut latest = greater_releases.first().unwrap().to_owned().clone();
     for release in greater_releases {
@@ -84,11 +91,12 @@ fn check_if_update_is_available() -> anyhow::Result<()> {
       latest.version.to_string()
     );
     info!("***************************************\n");
-    info!("Run `sv update` to update to the latest version.");
+    info!("Run `sv update` to update to the latest version.\n");
   }
   Ok(())
 }
 
+/// Updates the binary to the latest version
 fn update_binary(config: Config) -> anyhow::Result<()> {
   TermLogger::init(
     LevelFilter::Info,
@@ -101,8 +109,8 @@ fn update_binary(config: Config) -> anyhow::Result<()> {
   info!("Updating binary to the latest version");
   let mut status_builder = self_update::backends::github::Update::configure();
   let mut status_builder = status_builder
-    .repo_owner("ZimboPro")
-    .repo_name("sv")
+    .repo_owner(REPO_OWNER)
+    .repo_name(REPO_NAME)
     .bin_name("sv")
     .show_download_progress(true)
     .current_version(cargo_crate_version!());

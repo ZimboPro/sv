@@ -1,3 +1,4 @@
+/// HTTP methods
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
 pub enum HttpMethod {
   #[default]
@@ -10,6 +11,7 @@ pub enum HttpMethod {
   Options,
   Trace,
   Connect,
+  /// Any HTTP method is allowed
   Any,
 }
 
